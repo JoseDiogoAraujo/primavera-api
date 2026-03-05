@@ -16,13 +16,26 @@ app.use(cors());
 app.use(compression());
 app.use(express.json());
 
-// API Key authentication
+// Authentication: Basic Auth ou API Key
+const API_USER = process.env.API_USER || 'primavera';
+const API_PASS = process.env.API_PASS;
 const API_KEY = process.env.API_KEY;
 app.use('/api', (req, res, next) => {
-  if (!API_KEY) return next(); // Se nao configurada, permite tudo
+  if (!API_PASS && !API_KEY) return next(); // Se nao configurada, permite tudo
+
+  // Verificar API Key (header x-api-key)
   const key = req.headers['x-api-key'] || req.query.apikey;
-  if (key === API_KEY) return next();
-  res.status(401).json({ error: 'API key invalida ou em falta. Enviar header x-api-key.' });
+  if (API_KEY && key === API_KEY) return next();
+
+  // Verificar Basic Auth
+  const authHeader = req.headers.authorization;
+  if (API_PASS && authHeader && authHeader.startsWith('Basic ')) {
+    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString();
+    const [user, pass] = decoded.split(':');
+    if (user === API_USER && pass === API_PASS) return next();
+  }
+
+  res.status(401).json({ error: 'Autenticacao em falta. Usar Basic Auth ou header x-api-key.' });
 });
 
 // Swagger UI
