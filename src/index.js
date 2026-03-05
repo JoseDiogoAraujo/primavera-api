@@ -33,6 +33,7 @@ app.use('/api/stock', require('./routes/stock'));
 app.use('/api/financeiro', require('./routes/financeiro'));
 app.use('/api/rh', require('./routes/rh'));
 app.use('/api/query', require('./routes/query'));
+app.use('/api/copilot', require('./routes/copilot'));
 
 // Root redirect to docs
 app.get('/', (req, res) => res.redirect('/docs'));
