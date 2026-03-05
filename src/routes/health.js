@@ -5,7 +5,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const router = Router();
 
 router.get('/', asyncHandler(async (req, res) => {
-  const result = await query('SELECT 1 as ok, GETDATE() as serverTime, DB_NAME() as database');
+  const result = await query('SELECT 1 as ok, GETDATE() as serverTime, DB_NAME() as [database]');
   res.json({
     status: 'ok',
     api: 'Primavera V10 API',
