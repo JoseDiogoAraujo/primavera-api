@@ -1,0 +1,21 @@
+{
+  "name": "primavera-api",
+  "version": "1.0.0",
+  "description": "REST API para dados do Primavera V10 Executive",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "mssql": "^11.0.1",
+    "cors": "^2.8.5",
+    "helmet": "^8.0.0",
+    "compression": "^1.7.5",
+    "swagger-ui-express": "^5.0.1"
+  }
+}
