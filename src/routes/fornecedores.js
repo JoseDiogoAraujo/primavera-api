@@ -11,14 +11,14 @@ router.get('/', asyncHandler(async (req, res) => {
   let where = '1=1';
   const params = {};
   if (search) {
-    where += ' AND (Fornecedor LIKE @search OR Nome LIKE @search OR NumContribuinte LIKE @search)';
+    where += ' AND (Fornecedor LIKE @search OR Nome LIKE @search OR NumContrib LIKE @search)';
     params.search = `%${search}%`;
   }
 
   const countResult = await query(`SELECT COUNT(*) as total FROM Fornecedores WHERE ${where}`, params);
   const result = await query(`
-    SELECT Fornecedor, Nome, NumContribuinte, Morada, Localidade, CodPostal,
-           Pais, Telefone, Email, CondPag, Moeda, Debito, Credito, SituacaoActual
+    SELECT Fornecedor, Nome, NumContrib, Morada, Local as Localidade, Cp as CodPostal,
+           Tel as Telefone, Email, Pais, CondPag, Moeda, TotalDeb, LimiteCred
     FROM Fornecedores
     WHERE ${where}
     ORDER BY Nome
@@ -37,9 +37,9 @@ router.get('/:id', asyncHandler(async (req, res) => {
 router.get('/:id/documentos', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
   const result = await query(`
-    SELECT Id, TipoDoc, Serie, NumDoc, DataDoc, NumDocExterno, TotalDocumento, Estado
+    SELECT Id, TipoDoc, Serie, NumDoc, DataDoc, NumDocExterno, TotalDocumento
     FROM CabecCompras
-    WHERE Entidade = @id AND Anulado = 0
+    WHERE Entidade = @id
     ORDER BY DataDoc DESC
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `, { id: req.params.id, offset, limit });

@@ -5,11 +5,33 @@ const { parsePagination } = require('../middleware/pagination');
 
 const router = Router();
 
+// GET /financeiro/contas - Plano de contas
+router.get('/contas', asyncHandler(async (req, res) => {
+  const { limit, offset, page } = parsePagination(req);
+  const search = req.query.search || '';
+  let where = '1=1';
+  const params = {};
+  if (search) {
+    where += ' AND (Conta LIKE @search OR Descricao LIKE @search)';
+    params.search = `%${search}%`;
+  }
+
+  const countResult = await query(`SELECT COUNT(*) as total FROM PlanoContas WHERE ${where}`, params);
+  const result = await query(`
+    SELECT Conta, Descricao, TipoConta
+    FROM PlanoContas
+    WHERE ${where}
+    ORDER BY Conta
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+  `, { ...params, offset, limit });
+  res.json({ page, limit, total: countResult.recordset[0].total, data: result.recordset });
+}));
+
 // GET /financeiro/pendentes/clientes - Dividas de clientes
 router.get('/pendentes/clientes', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
   const result = await query(`
-    SELECT p.Entidade, c.Nome, c.Telefone, c.Email,
+    SELECT p.Entidade, c.Nome, c.Fac_Tel as Telefone, c.Email,
            SUM(p.ValorPendente) as totalPendente,
            COUNT(*) as numDocumentos,
            MIN(p.DataVenc) as vencimentoMaisAntigo,
@@ -18,7 +40,7 @@ router.get('/pendentes/clientes', asyncHandler(async (req, res) => {
     FROM Pendentes p
     LEFT JOIN Clientes c ON p.Entidade = c.Cliente
     WHERE p.TipoEntidade = 'C' AND p.ValorPendente > 0
-    GROUP BY p.Entidade, c.Nome, c.Telefone, c.Email
+    GROUP BY p.Entidade, c.Nome, c.Fac_Tel, c.Email
     ORDER BY totalPendente DESC
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `, { offset, limit });
@@ -46,7 +68,7 @@ router.get('/pendentes/fornecedores', asyncHandler(async (req, res) => {
 
 // GET /financeiro/pendentes/aging - Analise de antiguidade de divida
 router.get('/pendentes/aging', asyncHandler(async (req, res) => {
-  const tipo = req.query.tipo || 'C'; // C ou F
+  const tipo = req.query.tipo || 'C';
   const result = await query(`
     SELECT
       SUM(CASE WHEN DataVenc >= GETDATE() THEN ValorPendente ELSE 0 END) as naoVencido,
@@ -79,19 +101,6 @@ router.get('/pendentes/resumo', asyncHandler(async (req, res) => {
   const r = result.recordset[0];
   r.saldoLiquido = (r.totalReceber || 0) - (r.totalPagar || 0);
   res.json(r);
-}));
-
-// GET /financeiro/tesouraria/mensal - Fluxo de tesouraria mensal
-router.get('/tesouraria/mensal', asyncHandler(async (req, res) => {
-  const result = await query(`
-    SELECT FORMAT(Data, 'yyyy-MM') as mes,
-           SUM(CASE WHEN TipoEntidade = 'C' THEN TotalDocumento ELSE 0 END) as recebimentos,
-           SUM(CASE WHEN TipoEntidade = 'F' THEN TotalDocumento ELSE 0 END) as pagamentos
-    FROM CabecMovCCT
-    GROUP BY FORMAT(Data, 'yyyy-MM')
-    ORDER BY mes
-  `);
-  res.json({ data: result.recordset });
 }));
 
 module.exports = router;

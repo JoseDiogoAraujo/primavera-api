@@ -12,7 +12,7 @@ router.get('/documentos', asyncHandler(async (req, res) => {
   const tipoDoc = req.query.tipoDoc || '';
   const fornecedor = req.query.fornecedor || '';
 
-  let where = 'Anulado = 0';
+  let where = '1=1';
   const params = {};
   if (tipoDoc) { where += ' AND TipoDoc = @tipoDoc'; params.tipoDoc = tipoDoc; }
   if (fornecedor) { where += ' AND Entidade = @fornecedor'; params.fornecedor = fornecedor; }
@@ -22,7 +22,7 @@ router.get('/documentos', asyncHandler(async (req, res) => {
   const countResult = await query(`SELECT COUNT(*) as total FROM CabecCompras WHERE ${where}`, params);
   const result = await query(`
     SELECT Id, TipoDoc, Serie, NumDoc, Entidade, Nome, DataDoc, NumDocExterno,
-           Moeda, TotalMerc, TotalDesc, TotalIva, TotalDocumento, Estado
+           Moeda, TotalMerc, TotalDesc, TotalIva, TotalDocumento
     FROM CabecCompras
     WHERE ${where}
     ORDER BY DataDoc DESC
@@ -39,7 +39,7 @@ router.get('/documentos/:id', asyncHandler(async (req, res) => {
 
   const linhas = await query(`
     SELECT Id, NumLinha, Artigo, Descricao, Quantidade, Unidade, PrecUnit,
-           Desconto1, Desconto2, PrecoLiquido, TotalILiquido, CodIva, TaxaIva, TotalIva, Armazem
+           Desconto1, Desconto2, PrecoLiquido, TotalIliquido, CodIva, TaxaIva, TotalIva, Armazem
     FROM LinhasCompras
     WHERE IdCabecCompras = @id
     ORDER BY NumLinha
@@ -51,7 +51,7 @@ router.get('/documentos/:id', asyncHandler(async (req, res) => {
 // GET /compras/analytics/mensal
 router.get('/analytics/mensal', asyncHandler(async (req, res) => {
   const { dataInicio, dataFim } = parseDateRange(req);
-  let where = 'Anulado = 0';
+  let where = '1=1';
   const params = {};
   if (dataInicio) { where += ' AND DataDoc >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND DataDoc <= @dataFim'; params.dataFim = dataFim; }
@@ -73,7 +73,7 @@ router.get('/analytics/mensal', asyncHandler(async (req, res) => {
 router.get('/analytics/top-fornecedores', asyncHandler(async (req, res) => {
   const topN = Math.min(100, parseInt(req.query.top) || 10);
   const { dataInicio, dataFim } = parseDateRange(req);
-  let where = 'cc.Anulado = 0';
+  let where = '1=1';
   const params = {};
   if (dataInicio) { where += ' AND cc.DataDoc >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND cc.DataDoc <= @dataFim'; params.dataFim = dataFim; }
@@ -96,7 +96,7 @@ router.get('/analytics/top-fornecedores', asyncHandler(async (req, res) => {
 router.get('/analytics/top-artigos', asyncHandler(async (req, res) => {
   const topN = Math.min(100, parseInt(req.query.top) || 10);
   const { dataInicio, dataFim } = parseDateRange(req);
-  let where = 'cc.Anulado = 0';
+  let where = '1=1';
   const params = {};
   if (dataInicio) { where += ' AND cc.DataDoc >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND cc.DataDoc <= @dataFim'; params.dataFim = dataFim; }
@@ -104,12 +104,12 @@ router.get('/analytics/top-artigos', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT TOP (@topN) lc.Artigo, a.Descricao,
            SUM(lc.Quantidade) as totalQtd,
-           SUM(lc.TotalILiquido) as totalValor,
+           SUM(lc.TotalIliquido) as totalValor,
            AVG(lc.PrecUnit) as precoMedio,
            COUNT(DISTINCT cc.Entidade) as numFornecedores
     FROM LinhasCompras lc
     INNER JOIN CabecCompras cc ON lc.IdCabecCompras = cc.Id
-    LEFT JOIN Artigos a ON lc.Artigo = a.Artigo
+    LEFT JOIN Artigo a ON lc.Artigo = a.Artigo
     WHERE ${where}
     GROUP BY lc.Artigo, a.Descricao
     ORDER BY totalValor DESC
@@ -120,7 +120,7 @@ router.get('/analytics/top-artigos', asyncHandler(async (req, res) => {
 // GET /compras/analytics/resumo
 router.get('/analytics/resumo', asyncHandler(async (req, res) => {
   const { dataInicio, dataFim } = parseDateRange(req);
-  let where = 'Anulado = 0';
+  let where = '1=1';
   const params = {};
   if (dataInicio) { where += ' AND DataDoc >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND DataDoc <= @dataFim'; params.dataFim = dataFim; }

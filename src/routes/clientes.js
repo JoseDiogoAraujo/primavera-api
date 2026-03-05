@@ -16,7 +16,7 @@ router.get('/', asyncHandler(async (req, res) => {
   const params = {};
 
   if (search) {
-    where += ' AND (Cliente LIKE @search OR Nome LIKE @search OR NumContribuinte LIKE @search)';
+    where += ' AND (Cliente LIKE @search OR Nome LIKE @search OR NumContrib LIKE @search)';
     params.search = `%${search}%`;
   }
   if (zona) { where += ' AND Zona = @zona'; params.zona = zona; }
@@ -24,9 +24,9 @@ router.get('/', asyncHandler(async (req, res) => {
 
   const countResult = await query(`SELECT COUNT(*) as total FROM Clientes WHERE ${where}`, params);
   const result = await query(`
-    SELECT Cliente, Nome, NumContribuinte, Morada, Localidade, CodPostal, Pais,
-           Telefone, Email, CondPag, Moeda, Vendedor, Zona, Desconto,
-           Debito, Credito, LimiteCredito, SituacaoActual, DataCriacao
+    SELECT Cliente, Nome, NumContrib, Fac_Mor as Morada, Fac_Local as Localidade, Fac_Cp as CodPostal,
+           Fac_Tel as Telefone, Email, Pais, CondPag, Moeda, Vendedor, Zona, Desconto,
+           TotalDeb, LimiteCred, Situacao, DataCriacao
     FROM Clientes
     WHERE ${where}
     ORDER BY Nome
@@ -40,6 +40,19 @@ router.get('/', asyncHandler(async (req, res) => {
   });
 }));
 
+// GET /clientes/analytics/resumo
+router.get('/analytics/resumo', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT
+      COUNT(*) as totalClientes,
+      COUNT(CASE WHEN Situacao = 'Activo' OR Situacao IS NULL THEN 1 END) as activos,
+      SUM(TotalDeb) as totalDebito,
+      AVG(TotalDeb) as mediaDebito
+    FROM Clientes
+  `);
+  res.json(result.recordset[0]);
+}));
+
 // GET /clientes/:id
 router.get('/:id', asyncHandler(async (req, res) => {
   const result = await query('SELECT * FROM Clientes WHERE Cliente = @id', { id: req.params.id });
@@ -51,13 +64,13 @@ router.get('/:id', asyncHandler(async (req, res) => {
 router.get('/:id/documentos', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
   const tipoDoc = req.query.tipoDoc || '';
-  let where = 'Entidade = @id AND TipoEntidade = \'C\'';
+  let where = 'Entidade = @id';
   const params = { id: req.params.id };
   if (tipoDoc) { where += ' AND TipoDoc = @tipoDoc'; params.tipoDoc = tipoDoc; }
 
   const result = await query(`
-    SELECT Id, TipoDoc, Serie, NumDoc, Data, TotalMerc, TotalDesc, TotalIva,
-           TotalDocumento, Anulado, Estado
+    SELECT Id, TipoDoc, Serie, NumDoc, Data, Nome, TotalMerc, TotalDesc, TotalIva,
+           TotalDocumento, Moeda
     FROM CabecDoc
     WHERE ${where}
     ORDER BY Data DESC
@@ -78,20 +91,6 @@ router.get('/:id/saldo', asyncHandler(async (req, res) => {
     WHERE TipoEntidade = 'C' AND Entidade = @id
   `, { id: req.params.id });
   res.json(result.recordset[0] || {});
-}));
-
-// GET /clientes/analytics/resumo
-router.get('/analytics/resumo', asyncHandler(async (req, res) => {
-  const result = await query(`
-    SELECT
-      COUNT(*) as totalClientes,
-      COUNT(CASE WHEN SituacaoActual = 'Activo' OR SituacaoActual IS NULL THEN 1 END) as activos,
-      SUM(Debito) as totalDebito,
-      SUM(Credito) as totalCredito,
-      AVG(Debito) as mediaDebito
-    FROM Clientes
-  `);
-  res.json(result.recordset[0]);
 }));
 
 module.exports = router;

@@ -11,15 +11,15 @@ router.get('/actual', asyncHandler(async (req, res) => {
   const armazem = req.query.armazem || '';
   const familia = req.query.familia || '';
 
-  let where = 'MovStock = 1 AND StkActual > 0';
+  let where = "MovStock = 'S' AND STKActual > 0";
   const params = {};
-  if (armazem) { where += ' AND Armazem = @armazem'; params.armazem = armazem; }
+  if (armazem) { where += ' AND ArmazemSugestao = @armazem'; params.armazem = armazem; }
   if (familia) { where += ' AND Familia = @familia'; params.familia = familia; }
 
   const result = await query(`
-    SELECT Artigo, Descricao, Familia, Armazem, StkActual, StkMinimo, StkMaximo,
-           PCMedio, PCUltimo, (StkActual * PCMedio) as valorStock, UnidadeBase
-    FROM Artigos
+    SELECT Artigo, Descricao, Familia, ArmazemSugestao as Armazem, STKActual, STKMinimo, STKMaximo,
+           PCMedio, PCUltimo, (STKActual * PCMedio) as valorStock, UnidadeBase
+    FROM Artigo
     WHERE ${where}
     ORDER BY valorStock DESC
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
@@ -30,14 +30,14 @@ router.get('/actual', asyncHandler(async (req, res) => {
 // GET /stock/por-armazem - Stock agrupado por armazem
 router.get('/por-armazem', asyncHandler(async (req, res) => {
   const result = await query(`
-    SELECT a.Armazem, arm.Descricao,
+    SELECT a.ArmazemSugestao as Armazem, arm.Descricao,
            COUNT(*) as numArtigos,
-           SUM(a.StkActual) as totalUnidades,
-           SUM(a.StkActual * a.PCMedio) as valorTotal
-    FROM Artigos a
-    LEFT JOIN Armazens arm ON a.Armazem = arm.Armazem
-    WHERE a.MovStock = 1 AND a.StkActual > 0
-    GROUP BY a.Armazem, arm.Descricao
+           SUM(a.STKActual) as totalUnidades,
+           SUM(a.STKActual * a.PCMedio) as valorTotal
+    FROM Artigo a
+    LEFT JOIN Armazens arm ON a.ArmazemSugestao = arm.Armazem
+    WHERE a.MovStock = 'S' AND a.STKActual > 0
+    GROUP BY a.ArmazemSugestao, arm.Descricao
     ORDER BY valorTotal DESC
   `);
   res.json({ data: result.recordset });
@@ -48,11 +48,11 @@ router.get('/por-familia', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT a.Familia, f.Descricao,
            COUNT(*) as numArtigos,
-           SUM(a.StkActual) as totalUnidades,
-           SUM(a.StkActual * a.PCMedio) as valorTotal
-    FROM Artigos a
+           SUM(a.STKActual) as totalUnidades,
+           SUM(a.STKActual * a.PCMedio) as valorTotal
+    FROM Artigo a
     LEFT JOIN Familias f ON a.Familia = f.Familia
-    WHERE a.MovStock = 1 AND a.StkActual > 0
+    WHERE a.MovStock = 'S' AND a.STKActual > 0
     GROUP BY a.Familia, f.Descricao
     ORDER BY valorTotal DESC
   `);
@@ -62,21 +62,21 @@ router.get('/por-familia', asyncHandler(async (req, res) => {
 // GET /stock/alertas - Artigos com stock critico
 router.get('/alertas', asyncHandler(async (req, res) => {
   const result = await query(`
-    SELECT Artigo, Descricao, StkActual, StkMinimo, StkMaximo, Armazem,
+    SELECT Artigo, Descricao, STKActual, STKMinimo, STKMaximo, ArmazemSugestao as Armazem,
            CASE
-             WHEN StkActual <= 0 THEN 'sem_stock'
-             WHEN StkActual < StkMinimo THEN 'abaixo_minimo'
-             WHEN StkActual > StkMaximo AND StkMaximo > 0 THEN 'acima_maximo'
+             WHEN STKActual <= 0 THEN 'sem_stock'
+             WHEN STKActual < STKMinimo THEN 'abaixo_minimo'
+             WHEN STKActual > STKMaximo AND STKMaximo > 0 THEN 'acima_maximo'
            END as alerta,
-           (StkMinimo - StkActual) as deficit
-    FROM Artigos
-    WHERE MovStock = 1 AND (
-      StkActual <= 0
-      OR (StkActual < StkMinimo AND StkMinimo > 0)
-      OR (StkActual > StkMaximo AND StkMaximo > 0)
+           (STKMinimo - STKActual) as deficit
+    FROM Artigo
+    WHERE MovStock = 'S' AND (
+      STKActual <= 0
+      OR (STKActual < STKMinimo AND STKMinimo > 0)
+      OR (STKActual > STKMaximo AND STKMaximo > 0)
     )
     ORDER BY
-      CASE WHEN StkActual <= 0 THEN 0 WHEN StkActual < StkMinimo THEN 1 ELSE 2 END,
+      CASE WHEN STKActual <= 0 THEN 0 WHEN STKActual < STKMinimo THEN 1 ELSE 2 END,
       deficit DESC
   `);
   res.json({ total: result.recordset.length, data: result.recordset });
@@ -86,7 +86,7 @@ router.get('/alertas', asyncHandler(async (req, res) => {
 router.get('/movimentos', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
   const { dataInicio, dataFim } = parseDateRange(req);
-  const tipo = req.query.tipo || ''; // E ou S
+  const tipo = req.query.tipo || '';
 
   let where = '1=1';
   const params = {};
@@ -95,7 +95,8 @@ router.get('/movimentos', asyncHandler(async (req, res) => {
   if (tipo) { where += ' AND m.TipoMovimento = @tipo'; params.tipo = tipo; }
 
   const result = await query(`
-    SELECT m.Data, m.TipoMovimento, m.Stock_Anterior, m.Stock_Actual,
+    SELECT m.Data, m.TipoMovimento, m.Artigo, m.Armazem, m.Quantidade,
+           m.Stock_Anterior, m.Stock_Actual,
            (m.Stock_Actual - m.Stock_Anterior) as variacao,
            m.DataIntegracao, m.NumRegisto
     FROM INV_Movimentos m
@@ -110,22 +111,22 @@ router.get('/movimentos', asyncHandler(async (req, res) => {
 router.get('/rotacao', asyncHandler(async (req, res) => {
   const dias = parseInt(req.query.dias) || 90;
   const result = await query(`
-    SELECT a.Artigo, a.Descricao, a.StkActual, a.PCMedio,
-           (a.StkActual * a.PCMedio) as valorStock,
+    SELECT a.Artigo, a.Descricao, a.STKActual, a.PCMedio,
+           (a.STKActual * a.PCMedio) as valorStock,
            ISNULL(v.qtdVendida, 0) as qtdVendida,
            CASE WHEN ISNULL(v.qtdVendida, 0) > 0
-             THEN a.StkActual / (v.qtdVendida / @dias)
+             THEN a.STKActual / (v.qtdVendida / @dias)
              ELSE 9999 END as diasCobertura
-    FROM Artigos a
+    FROM Artigo a
     LEFT JOIN (
       SELECT ld.Artigo, SUM(ld.Quantidade) as qtdVendida
       FROM LinhasDoc ld
       INNER JOIN CabecDoc cd ON ld.IdCabecDoc = cd.Id
-      WHERE cd.TipoDoc IN ('FA','FR','FS') AND cd.Anulado = 0
+      WHERE cd.TipoDoc IN ('FA','FR','FS')
         AND cd.Data >= DATEADD(DAY, -@dias, GETDATE())
       GROUP BY ld.Artigo
     ) v ON a.Artigo = v.Artigo
-    WHERE a.MovStock = 1 AND a.StkActual > 0
+    WHERE a.MovStock = 'S' AND a.STKActual > 0
     ORDER BY diasCobertura DESC
   `, { dias });
   res.json({ dias, data: result.recordset });
@@ -136,13 +137,13 @@ router.get('/resumo', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT
       COUNT(*) as totalArtigosComStock,
-      SUM(StkActual) as totalUnidades,
-      SUM(StkActual * PCMedio) as valorTotalPCMedio,
-      SUM(StkActual * PCUltimo) as valorTotalPCUltimo,
-      COUNT(CASE WHEN StkActual < StkMinimo AND StkMinimo > 0 THEN 1 END) as artigosAbaixoMinimo,
-      COUNT(CASE WHEN StkActual <= 0 AND MovStock = 1 THEN 1 END) as artigosSemStock
-    FROM Artigos
-    WHERE MovStock = 1 AND StkActual > 0
+      SUM(STKActual) as totalUnidades,
+      SUM(STKActual * PCMedio) as valorTotalPCMedio,
+      SUM(STKActual * PCUltimo) as valorTotalPCUltimo,
+      COUNT(CASE WHEN STKActual < STKMinimo AND STKMinimo > 0 THEN 1 END) as artigosAbaixoMinimo,
+      COUNT(CASE WHEN STKActual <= 0 THEN 1 END) as artigosSemStock
+    FROM Artigo
+    WHERE MovStock = 'S'
   `);
   res.json(result.recordset[0]);
 }));
