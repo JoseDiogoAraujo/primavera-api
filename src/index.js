@@ -16,6 +16,15 @@ app.use(cors());
 app.use(compression());
 app.use(express.json());
 
+// API Key authentication
+const API_KEY = process.env.API_KEY;
+app.use('/api', (req, res, next) => {
+  if (!API_KEY) return next(); // Se nao configurada, permite tudo
+  const key = req.headers['x-api-key'] || req.query.apikey;
+  if (key === API_KEY) return next();
+  res.status(401).json({ error: 'API key invalida ou em falta. Enviar header x-api-key.' });
+});
+
 // Swagger UI
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDoc, {
   customCss: '.swagger-ui .topbar { display: none }',
