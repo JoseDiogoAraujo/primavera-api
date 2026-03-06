@@ -4,11 +4,14 @@ const https = require('https');
 
 const GOOGLE_API_KEY = 'AIzaSyBXNpRqSwHf5AQe9yWhP9lfuWwiIIXsue4';
 const SEED_FILE = path.join(__dirname, '..', 'locality-cache.json');
+const COORDS_FILE = path.join(__dirname, '..', 'municipality-coords.json');
 
 // In-memory cache: raw LocalDescarga -> normalized municipality name
 let cache = {};
+// Coordinates cache: normalized municipality name -> { lat, lng }
+let coordsCache = {};
 
-// Load seed cache from file shipped with the code
+// Load seed cache and coordinates from files shipped with the code
 function loadCache() {
   try {
     if (fs.existsSync(SEED_FILE)) {
@@ -19,6 +22,20 @@ function loadCache() {
     console.error('[geocode] Error loading cache:', err.message);
     cache = {};
   }
+  try {
+    if (fs.existsSync(COORDS_FILE)) {
+      const coords = JSON.parse(fs.readFileSync(COORDS_FILE, 'utf8'));
+      coords.forEach(c => { coordsCache[c.name] = { lat: c.lat, lng: c.lng }; });
+      console.log(`[geocode] Coords loaded: ${Object.keys(coordsCache).length} municipalities`);
+    }
+  } catch (err) {
+    console.error('[geocode] Error loading coords:', err.message);
+  }
+}
+
+// Get coordinates for a normalized municipality
+function getCoords(normalizedName) {
+  return coordsCache[normalizedName] || null;
 }
 
 // Call Google Geocoding API
@@ -102,4 +119,4 @@ function getCache() {
 // Initialize on module load
 loadCache();
 
-module.exports = { normalize, bulkNormalizeSync, getCache, loadCache };
+module.exports = { normalize, bulkNormalizeSync, getCache, getCoords, loadCache };

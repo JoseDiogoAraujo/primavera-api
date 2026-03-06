@@ -310,15 +310,20 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   }
 
   const data = Object.values(aggMap)
-    .map(a => ({
-      localidade: a.localidade,
-      numDocumentos: a.numDocumentos,
-      totalVendas: a.totalVendas,
-      mediaDocumento: a.numDocumentos > 0 ? a.totalVendas / a.numDocumentos : 0,
-      numClientes: a.clientes.size,
-      primeiraVenda: a.minData,
-      ultimaVenda: a.maxData
-    }))
+    .map(a => {
+      const coords = geocode.getCoords(a.localidade);
+      return {
+        localidade: a.localidade,
+        latitude: coords ? coords.lat : null,
+        longitude: coords ? coords.lng : null,
+        numDocumentos: a.numDocumentos,
+        totalVendas: a.totalVendas,
+        mediaDocumento: a.numDocumentos > 0 ? a.totalVendas / a.numDocumentos : 0,
+        numClientes: a.clientes.size,
+        primeiraVenda: a.minData,
+        ultimaVenda: a.maxData
+      };
+    })
     .sort((a, b) => b.totalVendas - a.totalVendas)
     .slice(0, topN);
 
