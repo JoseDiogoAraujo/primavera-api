@@ -263,6 +263,8 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   const params = {};
   if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
+  // Default: current year if no date filters provided
+  if (!dataInicio && !dataFim) { where += ' AND YEAR(cd.Data) = YEAR(GETDATE())'; }
 
   // Get raw data: LocalDescarga as primary, Fac_Cploc as fallback for "Morada do Cliente"/empty
   const result = await query(`
