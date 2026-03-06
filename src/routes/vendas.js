@@ -250,4 +250,31 @@ router.get('/analytics/yoy', asyncHandler(async (req, res) => {
   res.json({ data: result.recordset });
 }));
 
+// GET /vendas/analytics/por-localidade - Vendas por localidade de descarga (para mapa)
+const TIPOS_DESCARGA = "('FA','FAC','FNT','FR')";
+router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
+  const { dataInicio, dataFim } = parseDateRange(req);
+  const topN = Math.min(500, parseInt(req.query.top) || 100);
+  let where = `TipoDoc IN ${TIPOS_DESCARGA} AND LocalidadeEntrega IS NOT NULL AND LocalidadeEntrega != ''`;
+  const params = {};
+  if (dataInicio) { where += ' AND Data >= @dataInicio'; params.dataInicio = dataInicio; }
+  if (dataFim) { where += ' AND Data <= @dataFim'; params.dataFim = dataFim; }
+
+  const result = await query(`
+    SELECT TOP (@topN) LocalidadeEntrega as localidade,
+           LocalDescarga as localDescarga,
+           COUNT(*) as numDocumentos,
+           SUM(TotalDocumento) as totalVendas,
+           AVG(TotalDocumento) as mediaDocumento,
+           COUNT(DISTINCT Entidade) as numClientes,
+           MIN(Data) as primeiraVenda,
+           MAX(Data) as ultimaVenda
+    FROM CabecDoc
+    WHERE ${where}
+    GROUP BY LocalidadeEntrega, LocalDescarga
+    ORDER BY totalVendas DESC
+  `, { ...params, topN });
+  res.json({ data: result.recordset });
+}));
+
 module.exports = router;

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mapa de Vendas - Cimenteira do Louro</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }
+    .header { background: #16213e; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #0f3460; }
+    .header h1 { font-size: 20px; color: #e94560; }
+    .header .subtitle { font-size: 13px; color: #8a8a9a; }
+    .filters { background: #16213e; padding: 12px 24px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #0f3460; }
+    .filters label { font-size: 13px; color: #8a8a9a; }
+    .filters input, .filters select { background: #1a1a2e; border: 1px solid #0f3460; color: #e0e0e0; padding: 6px 10px; border-radius: 4px; font-size: 13px; }
+    .filters button { background: #e94560; color: white; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .filters button:hover { background: #c73650; }
+    .container { display: flex; height: calc(100vh - 110px); }
+    #map { flex: 1; z-index: 1; }
+    .sidebar { width: 360px; background: #16213e; overflow-y: auto; border-left: 1px solid #0f3460; }
+    .sidebar h2 { padding: 16px; font-size: 15px; color: #e94560; border-bottom: 1px solid #0f3460; }
+    .stats { padding: 12px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border-bottom: 1px solid #0f3460; }
+    .stat { background: #1a1a2e; padding: 10px; border-radius: 6px; }
+    .stat .value { font-size: 18px; font-weight: 700; color: #e94560; }
+    .stat .label { font-size: 11px; color: #8a8a9a; margin-top: 2px; }
+    .ranking { list-style: none; }
+    .ranking li { padding: 10px 16px; border-bottom: 1px solid #0f3460; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s; }
+    .ranking li:hover { background: #1a1a2e; }
+    .ranking .pos { color: #e94560; font-weight: 700; width: 28px; }
+    .ranking .name { flex: 1; font-size: 13px; }
+    .ranking .val { font-size: 13px; font-weight: 600; color: #4ecca3; }
+    .ranking .docs { font-size: 11px; color: #8a8a9a; margin-left: 8px; }
+    .loading { display: flex; align-items: center; justify-content: center; height: 200px; color: #8a8a9a; }
+    .leaflet-popup-content-wrapper { background: #16213e; color: #e0e0e0; border-radius: 8px; }
+    .leaflet-popup-tip { background: #16213e; }
+    .leaflet-popup-content { margin: 12px; }
+    .popup-title { font-size: 15px; font-weight: 700; color: #e94560; margin-bottom: 8px; }
+    .popup-row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 13px; }
+    .popup-row .label { color: #8a8a9a; }
+    .popup-row .value { font-weight: 600; color: #4ecca3; }
+    @media (max-width: 768px) { .sidebar { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Mapa de Vendas por Localidade</h1>
+      <div class="subtitle">Cimenteira do Louro - Primavera V10 | Docs: FA, FAC, FNT, FR</div>
+    </div>
+  </div>
+  <div class="filters">
+    <label>De:</label>
+    <input type="date" id="dataInicio">
+    <label>Ate:</label>
+    <input type="date" id="dataFim">
+    <label>Top:</label>
+    <select id="topN">
+      <option value="50">50</option>
+      <option value="100" selected>100</option>
+      <option value="200">200</option>
+      <option value="500">500</option>
+    </select>
+    <button onclick="carregarDados()">Filtrar</button>
+  </div>
+  <div class="container">
+    <div id="map"></div>
+    <div class="sidebar">
+      <div class="stats" id="statsPanel">
+        <div class="stat"><div class="value" id="totalVendas">-</div><div class="label">Total Vendas</div></div>
+        <div class="stat"><div class="value" id="totalDocs">-</div><div class="label">Documentos</div></div>
+        <div class="stat"><div class="value" id="totalLocalidades">-</div><div class="label">Localidades</div></div>
+        <div class="stat"><div class="value" id="totalClientes">-</div><div class="label">Clientes</div></div>
+      </div>
+      <h2>Ranking por Localidade</h2>
+      <ul class="ranking" id="ranking"><li class="loading">A carregar...</li></ul>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([41.35, -8.4], 9);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      maxZoom: 19
+    }).addTo(map);
+
+    let markers = L.layerGroup().addTo(map);
+    const geocodeCache = {};
+
+    function formatEUR(v) {
+      return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v);
+    }
+    function formatNum(v) {
+      return new Intl.NumberFormat('pt-PT').format(v);
+    }
+
+    async function geocode(localidade) {
+      const key = localidade.toLowerCase().trim();
+      if (geocodeCache[key]) return geocodeCache[key];
+
+      const search = encodeURIComponent(localidade + ', Portugal');
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${search}&limit=1&countrycodes=pt`);
+        const data = await res.json();
+        if (data.length > 0) {
+          const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+          geocodeCache[key] = coords;
+          return coords;
+        }
+      } catch (e) { /* ignore */ }
+      return null;
+    }
+
+    function getColor(value, max) {
+      const ratio = Math.min(value / max, 1);
+      if (ratio > 0.7) return '#e94560';
+      if (ratio > 0.4) return '#f5a623';
+      if (ratio > 0.15) return '#4ecca3';
+      return '#3498db';
+    }
+
+    function getRadius(value, max) {
+      const minR = 6, maxR = 35;
+      const ratio = Math.sqrt(value / max);
+      return minR + ratio * (maxR - minR);
+    }
+
+    async function carregarDados() {
+      const dataInicio = document.getElementById('dataInicio').value;
+      const dataFim = document.getElementById('dataFim').value;
+      const topN = document.getElementById('topN').value;
+
+      let url = `/api/vendas/analytics/por-localidade?top=${topN}`;
+      if (dataInicio) url += `&dataInicio=${dataInicio}`;
+      if (dataFim) url += `&dataFim=${dataFim}`;
+
+      document.getElementById('ranking').innerHTML = '<li class="loading">A carregar dados...</li>';
+
+      try {
+        const res = await fetch(url);
+        const json = await res.json();
+        const dados = json.data || [];
+
+        // Agrupar por localidade (pode haver vários LocalDescarga para a mesma localidade)
+        const agrupado = {};
+        dados.forEach(d => {
+          const loc = d.localidade.trim();
+          if (!agrupado[loc]) {
+            agrupado[loc] = { localidade: loc, numDocumentos: 0, totalVendas: 0, numClientes: 0 };
+          }
+          agrupado[loc].numDocumentos += d.numDocumentos;
+          agrupado[loc].totalVendas += d.totalVendas;
+          agrupado[loc].numClientes += d.numClientes;
+        });
+
+        const localidades = Object.values(agrupado).sort((a, b) => b.totalVendas - a.totalVendas);
+        const maxVendas = localidades.length > 0 ? localidades[0].totalVendas : 1;
+
+        // Stats
+        const totalV = localidades.reduce((s, l) => s + l.totalVendas, 0);
+        const totalD = localidades.reduce((s, l) => s + l.numDocumentos, 0);
+        const totalC = new Set(dados.map(d => d.numClientes)).size;
+        document.getElementById('totalVendas').textContent = formatEUR(totalV);
+        document.getElementById('totalDocs').textContent = formatNum(totalD);
+        document.getElementById('totalLocalidades').textContent = formatNum(localidades.length);
+        document.getElementById('totalClientes').textContent = formatNum(localidades.reduce((s, l) => s + l.numClientes, 0));
+
+        // Ranking
+        const rankingEl = document.getElementById('ranking');
+        rankingEl.innerHTML = localidades.map((l, i) => `
+          <li data-loc="${l.localidade}" onclick="focarLocalidade('${l.localidade.replace(/'/g, "\\'")}')">
+            <span class="pos">${i + 1}</span>
+            <span class="name">${l.localidade}</span>
+            <span class="val">${formatEUR(l.totalVendas)}</span>
+            <span class="docs">${formatNum(l.numDocumentos)} docs</span>
+          </li>
+        `).join('');
+
+        // Mapa - geocodificar e adicionar marcadores
+        markers.clearLayers();
+        const bounds = [];
+
+        // Geocodificar em batches de 5 (respeitar rate limit do Nominatim)
+        for (let i = 0; i < localidades.length; i += 5) {
+          const batch = localidades.slice(i, i + 5);
+          const results = await Promise.all(batch.map(async (l) => {
+            const coords = await geocode(l.localidade);
+            return { ...l, coords };
+          }));
+
+          results.forEach(l => {
+            if (!l.coords) return;
+            bounds.push([l.coords.lat, l.coords.lng]);
+
+            const circle = L.circleMarker([l.coords.lat, l.coords.lng], {
+              radius: getRadius(l.totalVendas, maxVendas),
+              fillColor: getColor(l.totalVendas, maxVendas),
+              color: '#fff',
+              weight: 1,
+              opacity: 0.8,
+              fillOpacity: 0.7
+            });
+
+            circle.bindPopup(`
+              <div class="popup-title">${l.localidade}</div>
+              <div class="popup-row"><span class="label">Total Vendas:</span><span class="value">${formatEUR(l.totalVendas)}</span></div>
+              <div class="popup-row"><span class="label">Documentos:</span><span class="value">${formatNum(l.numDocumentos)}</span></div>
+              <div class="popup-row"><span class="label">Clientes:</span><span class="value">${formatNum(l.numClientes)}</span></div>
+              <div class="popup-row"><span class="label">Media/Doc:</span><span class="value">${formatEUR(l.totalVendas / l.numDocumentos)}</span></div>
+            `);
+
+            markers.addLayer(circle);
+          });
+
+          // Rate limit: 1 req/seg por policy do Nominatim
+          if (i + 5 < localidades.length) await new Promise(r => setTimeout(r, 1100));
+        }
+
+        if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30] });
+
+      } catch (err) {
+        console.error('Erro:', err);
+        document.getElementById('ranking').innerHTML = '<li class="loading">Erro ao carregar dados</li>';
+      }
+    }
+
+    function focarLocalidade(nome) {
+      const key = nome.toLowerCase().trim();
+      if (geocodeCache[key]) {
+        map.setView([geocodeCache[key].lat, geocodeCache[key].lng], 13);
+        markers.eachLayer(layer => {
+          const ll = layer.getLatLng();
+          if (Math.abs(ll.lat - geocodeCache[key].lat) < 0.001 && Math.abs(ll.lng - geocodeCache[key].lng) < 0.001) {
+            layer.openPopup();
+          }
+        });
+      }
+    }
+
+    // Carregar ao iniciar
+    carregarDados();
+  </script>
+</body>
+</html>

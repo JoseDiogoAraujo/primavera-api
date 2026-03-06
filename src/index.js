@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const swaggerUi = require('swagger-ui-express');
 const swaggerDoc = require('./swagger');
+const path = require('path');
 const { errorHandler } = require('./middleware/errorHandler');
 const { getPool } = require('./db');
 
@@ -57,8 +58,12 @@ app.use('/api/rh', require('./routes/rh'));
 app.use('/api/query', require('./routes/query'));
 app.use('/api/copilot', require('./routes/copilot'));
 
+// Static pages (mapa, dashboards)
+app.use('/static', express.static(path.join(__dirname, 'public')));
+
 // Root redirect to docs
 app.get('/', (req, res) => res.redirect('/docs'));
+app.get('/mapa', (req, res) => res.sendFile(path.join(__dirname, 'public', 'mapa.html')));
 
 // Error handler
 app.use(errorHandler);
