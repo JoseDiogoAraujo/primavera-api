@@ -258,7 +258,8 @@ const TIPOS_DESCARGA = "('FA','FAC','FNT','FR')";
 
 router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   const { dataInicio, dataFim } = parseDateRange(req);
-  const topN = Math.min(500, parseInt(req.query.top) || 100);
+  const topNParam = parseInt(req.query.top);
+  const topN = topNParam === 0 ? Infinity : Math.min(500, topNParam || 100);
   let where = `cd.TipoDoc IN ${TIPOS_DESCARGA}`;
   const params = {};
   if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
@@ -282,21 +283,25 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   // Queue any uncached values for background geocoding
   const allRaw = result.recordset.map(r => {
     const ld = r.localDescarga;
-    return (!ld || ld === '' || ld === '.' || ld === 'Morada do Cliente') ? r.facCploc : ld;
+    return (!ld || ld === '' || ld === '.' || ld === '..' || ld === 'Morada do Cliente') ? r.facCploc : ld;
   }).filter(Boolean);
   geocode.bulkNormalizeSync([...new Set(allRaw)]);
 
   // Normalize and aggregate (synchronous from cache)
+  // IMPORTANT: Never skip documents - all must be counted for sum to match total
   const aggMap = {};
   for (const r of result.recordset) {
     let raw = r.localDescarga;
-    if (!raw || raw === '' || raw === '.' || raw === 'Morada do Cliente') {
+    if (!raw || raw === '' || raw === '.' || raw === '..' || raw === 'Morada do Cliente') {
       raw = r.facCploc || null;
     }
-    if (!raw) continue;
 
-    const normalized = geocode.normalize(raw);
-    if (!normalized) continue;
+    let normalized;
+    if (!raw) {
+      normalized = 'Sem Localidade';
+    } else {
+      normalized = geocode.normalize(raw) || 'Sem Localidade';
+    }
 
     if (!aggMap[normalized]) {
       aggMap[normalized] = { localidade: normalized, numDocumentos: 0, totalVendas: 0, clientes: new Set(), minData: null, maxData: null };
