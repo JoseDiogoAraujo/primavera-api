@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { query } = require('../db');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { parsePagination, parseDateRange } = require('../middleware/pagination');
+const geocode = require('../geocode');
 
 const router = Router();
 
@@ -251,115 +252,9 @@ router.get('/analytics/yoy', asyncHandler(async (req, res) => {
 }));
 
 // GET /vendas/analytics/por-localidade - Vendas por localidade de descarga (para mapa)
-// Normaliza automaticamente variacoes de nomes e usa Fac_Cploc do cliente como fallback
+// Usa Google Geocoding API para normalizar automaticamente nomes de localidades
+// Cache persistente em locality-cache.json - geocodifica cada valor distinto uma unica vez
 const TIPOS_DESCARGA = "('FA','FAC','FNT','FR')";
-
-// Normalizacao SQL inline: limpa e unifica nomes de localidades
-const NORMALIZA_LOCALIDADE = `
-  CASE
-    -- Fallback: se localidade invalida (., Apartado, Lote, Rua, Av., etc), usar Fac_Cploc do cliente
-    WHEN LTRIM(RTRIM(loc_raw)) IN ('.','..','') OR LTRIM(RTRIM(loc_raw)) IS NULL
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'Apartado%' OR LTRIM(RTRIM(loc_raw)) LIKE 'Lote%'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'Rua %' OR LTRIM(RTRIM(loc_raw)) LIKE 'RUA %'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'Av.%' OR LTRIM(RTRIM(loc_raw)) LIKE 'AV.%'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'Edificio%' OR LTRIM(RTRIM(loc_raw)) LIKE 'EDIFICIO%'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'Praça%' OR LTRIM(RTRIM(loc_raw)) LIKE 'Polo%'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'Pólo%'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'Aparatado%'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'PAVILHAO%'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'FRENTE %'
-      OR LTRIM(RTRIM(loc_raw)) LIKE '%(JUNTO%'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'NO %'
-      OR LTRIM(RTRIM(loc_raw)) LIKE 'Alto dos%'
-      THEN COALESCE(NULLIF(LTRIM(RTRIM(cli_cploc)),'.'), NULLIF(LTRIM(RTRIM(cli_local)),'.'))
-
-    -- Vila Nova de Famalicao (todas as variacoes)
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '%V.N.%FAMALICA%'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE '%V. N.%FAMALICA%'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'VNFAMALICA%'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'FAMALICA%'
-      OR (UPPER(LTRIM(RTRIM(loc_raw))) LIKE '%VILA NOVA%FAMALICA%' AND UPPER(LTRIM(RTRIM(loc_raw))) NOT LIKE '%TELHA%')
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE '%(ESTRADA:%FAMALICA%'
-      THEN 'Vila Nova de Famalicao'
-
-    -- Vila Nova de Gaia
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'V.N.GAIA%'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) = 'GAIA'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE '%VNG'
-      OR (UPPER(LTRIM(RTRIM(loc_raw))) LIKE '%VILA NOVA%GAIA%' AND LEN(LTRIM(RTRIM(loc_raw))) < 25)
-      THEN 'Vila Nova de Gaia'
-
-    -- Santo Tirso
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) IN ('SANTO TIRSO','STO TIRSO','ST.TIRSO','S. TIRSO','ST TIRSO')
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'ST. TIRSO%'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'STO TIRSO%'
-      THEN 'Santo Tirso'
-
-    -- Povoa de Varzim
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '%POVOA%VARZIM%'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE '%PÓVOA%VARZIM%'
-      THEN 'Povoa de Varzim'
-
-    -- Viana do Castelo
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '%VIANA%CASTELO%'
-      THEN 'Viana do Castelo'
-
-    -- Azurem / Guimaraes
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) IN ('AZUREM','AZURÉM')
-      THEN 'Azurem'
-
-    -- Guimaraes
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) IN ('GUIMARAES','GUIMARÃES')
-      THEN 'Guimaraes'
-
-    -- Castelo da Maia
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'CAST%LO%MAIA%'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) = 'CASTELO MAIA'
-      THEN 'Castelo da Maia'
-
-    -- Moure BCL -> Moure
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'MOURE%BCL%'
-      THEN 'Moure'
-
-    -- Alcacer do Sal
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'ALCAC%SAL%' OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'ALCÁC%SAL%'
-      THEN 'Alcacer do Sal'
-
-    -- Sao Tome de Negrelos
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'S%TOM%NEGRELO%'
-      THEN 'S. Tome de Negrelos'
-
-    -- Riba de Ave
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'RIBA%AVE%' OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'RIBA D%AVE%'
-      THEN 'Riba de Ave'
-
-    -- Oliveira S. Mateus / Santa Maria
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'OLIVEIRA S%MATEUS%'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'OLIVEIRA SANTA MARIA%'
-      THEN 'Oliveira S. Mateus'
-
-    -- Rebordoes
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'REBORD%ES%' OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'REBORDÕ%'
-      THEN 'Rebordoes'
-
-    -- S. Mamede Coronado
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'S%MAMEDE%CORONADO%'
-      OR UPPER(LTRIM(RTRIM(loc_raw))) LIKE 'S.MAMEDE%CORONADO%'
-      THEN 'S. Mamede Coronado'
-
-    -- Sufixos de concelho (VFR, GMR, PNF, etc) - limpar
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '% VFR' THEN LEFT(LTRIM(RTRIM(loc_raw)), LEN(LTRIM(RTRIM(loc_raw)))-4)
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '% GMR' THEN LEFT(LTRIM(RTRIM(loc_raw)), LEN(LTRIM(RTRIM(loc_raw)))-4)
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '% PNF' THEN LEFT(LTRIM(RTRIM(loc_raw)), LEN(LTRIM(RTRIM(loc_raw)))-4)
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '% BCL' THEN LEFT(LTRIM(RTRIM(loc_raw)), LEN(LTRIM(RTRIM(loc_raw)))-4)
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '% MBR' THEN LEFT(LTRIM(RTRIM(loc_raw)), LEN(LTRIM(RTRIM(loc_raw)))-4)
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '% MTR' THEN LEFT(LTRIM(RTRIM(loc_raw)), LEN(LTRIM(RTRIM(loc_raw)))-4)
-    WHEN UPPER(LTRIM(RTRIM(loc_raw))) LIKE '% VNG' THEN LEFT(LTRIM(RTRIM(loc_raw)), LEN(LTRIM(RTRIM(loc_raw)))-4)
-
-    -- Default: trim e capitalize
-    ELSE LTRIM(RTRIM(loc_raw))
-  END
-`;
 
 router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   const { dataInicio, dataFim } = parseDateRange(req);
@@ -369,32 +264,82 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
 
+  // 1. Get raw data from DB: LocalDescarga as primary, Fac_Cploc as fallback for "Morada do Cliente"
   const result = await query(`
-    WITH DocNorm AS (
-      SELECT
-        cd.TotalDocumento,
-        cd.Entidade,
-        cd.Data,
-        cd.LocalDescarga,
-        ${NORMALIZA_LOCALIDADE.replace(/loc_raw/g, 'cd.LocalidadeEntrega').replace(/cli_cploc/g, 'c.Fac_Cploc').replace(/cli_local/g, 'c.Fac_Local')} as localidade_norm
-      FROM CabecDoc cd
-      LEFT JOIN Clientes c ON cd.Entidade = c.Cliente
-      WHERE ${where}
-    )
-    SELECT TOP (@topN)
-           localidade_norm as localidade,
-           COUNT(*) as numDocumentos,
-           SUM(TotalDocumento) as totalVendas,
-           AVG(TotalDocumento) as mediaDocumento,
-           COUNT(DISTINCT Entidade) as numClientes,
-           MIN(Data) as primeiraVenda,
-           MAX(Data) as ultimaVenda
-    FROM DocNorm
-    WHERE localidade_norm IS NOT NULL AND localidade_norm != '' AND localidade_norm != '.'
-    GROUP BY localidade_norm
-    ORDER BY totalVendas DESC
-  `, { ...params, topN });
-  res.json({ data: result.recordset });
+    SELECT
+      cd.TotalDocumento,
+      cd.Entidade,
+      cd.Data,
+      LTRIM(RTRIM(cd.LocalDescarga)) as localDescarga,
+      LTRIM(RTRIM(c.Fac_Cploc)) as facCploc
+    FROM CabecDoc cd
+    LEFT JOIN Clientes c ON cd.Entidade = c.Cliente
+    WHERE ${where}
+  `, params);
+
+  // 2. Determine raw locality for each doc
+  const rows = result.recordset.map(r => {
+    let raw = r.localDescarga;
+    // Fallback: if empty or "Morada do Cliente", use client's Fac_Cploc
+    if (!raw || raw === '' || raw === '.' || raw === 'Morada do Cliente') {
+      raw = r.facCploc || null;
+    }
+    return { ...r, rawLocality: raw };
+  });
+
+  // 3. Collect unique raw values and bulk geocode any uncached ones
+  const uniqueRaw = [...new Set(rows.map(r => r.rawLocality).filter(Boolean))];
+  await geocode.bulkNormalize(uniqueRaw);
+
+  // 4. Normalize each row and aggregate
+  const aggMap = {};
+  for (const row of rows) {
+    if (!row.rawLocality) continue;
+    const normalized = await geocode.normalize(row.rawLocality);
+    if (!normalized) continue;
+
+    if (!aggMap[normalized]) {
+      aggMap[normalized] = { localidade: normalized, numDocumentos: 0, totalVendas: 0, clientes: new Set(), minData: null, maxData: null, somaDoc: 0 };
+    }
+    const agg = aggMap[normalized];
+    agg.numDocumentos++;
+    agg.totalVendas += row.TotalDocumento || 0;
+    agg.clientes.add(row.Entidade);
+    const d = row.Data;
+    if (!agg.minData || d < agg.minData) agg.minData = d;
+    if (!agg.maxData || d > agg.maxData) agg.maxData = d;
+  }
+
+  // 5. Convert to sorted array
+  const data = Object.values(aggMap)
+    .map(a => ({
+      localidade: a.localidade,
+      numDocumentos: a.numDocumentos,
+      totalVendas: a.totalVendas,
+      mediaDocumento: a.numDocumentos > 0 ? a.totalVendas / a.numDocumentos : 0,
+      numClientes: a.clientes.size,
+      primeiraVenda: a.minData,
+      ultimaVenda: a.maxData
+    }))
+    .sort((a, b) => b.totalVendas - a.totalVendas)
+    .slice(0, topN);
+
+  res.json({ data });
+}));
+
+// GET /vendas/analytics/geocode-cache - Ver/gerir o cache de geocoding
+router.get('/analytics/geocode-cache', asyncHandler(async (req, res) => {
+  const cache = geocode.getCache();
+  const entries = Object.entries(cache);
+  const resolved = entries.filter(([, v]) => v !== null);
+  const failed = entries.filter(([, v]) => v === null);
+  res.json({
+    total: entries.length,
+    resolved: resolved.length,
+    failed: failed.length,
+    cache: req.query.full === '1' ? cache : undefined,
+    failedEntries: failed.map(([k]) => k)
+  });
 }));
 
 module.exports = router;
