@@ -3,16 +3,16 @@ const path = require('path');
 const https = require('https');
 
 const GOOGLE_API_KEY = 'AIzaSyBXNpRqSwHf5AQe9yWhP9lfuWwiIIXsue4';
-const CACHE_FILE = path.join(__dirname, '..', 'locality-cache.json');
+const SEED_FILE = path.join(__dirname, '..', 'locality-cache.json');
 
 // In-memory cache: raw LocalDescarga -> normalized municipality name
 let cache = {};
 
-// Load cache from disk on startup
+// Load seed cache from file shipped with the code
 function loadCache() {
   try {
-    if (fs.existsSync(CACHE_FILE)) {
-      cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    if (fs.existsSync(SEED_FILE)) {
+      cache = JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'));
       console.log(`[geocode] Cache loaded: ${Object.keys(cache).length} entries`);
     }
   } catch (err) {
@@ -21,22 +21,13 @@ function loadCache() {
   }
 }
 
-// Save cache to disk
-function saveCache() {
-  try {
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
-  } catch (err) {
-    console.error('[geocode] Error saving cache:', err.message);
-  }
-}
-
 // Call Google Geocoding API
 function geocodeGoogle(address) {
   return new Promise((resolve, reject) => {
     const encoded = encodeURIComponent(address + ', Portugal');
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encoded}&key=${GOOGLE_API_KEY}&language=pt&region=pt`;
+    const url = `/maps/api/geocode/json?address=${encoded}&key=${GOOGLE_API_KEY}&language=pt&region=pt`;
 
-    https.get(url, (res) => {
+    https.get({ hostname: 'maps.googleapis.com', path: url }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -44,73 +35,66 @@ function geocodeGoogle(address) {
           const json = JSON.parse(data);
           if (json.results && json.results[0]) {
             const components = json.results[0].address_components;
-            // Try locality first, then administrative_area_level_2 (municipality)
-            const locality = components.find(c => c.types.includes('locality'));
             const municipality = components.find(c => c.types.includes('administrative_area_level_2'));
-            const result = (municipality && municipality.long_name) || (locality && locality.long_name) || null;
-            resolve(result);
+            const locality = components.find(c => c.types.includes('locality'));
+            resolve((municipality && municipality.long_name) || (locality && locality.long_name) || null);
           } else {
             resolve(null);
           }
-        } catch (e) {
-          reject(e);
-        }
+        } catch (e) { reject(e); }
       });
     }).on('error', reject);
   });
 }
 
-// Get normalized locality for a raw LocalDescarga value
-async function normalize(raw) {
+// Get normalized locality - returns from cache instantly, geocodes new values in background
+function normalize(raw) {
   if (!raw || raw.trim() === '' || raw.trim() === '.') return null;
-
   const key = raw.trim();
 
-  // Check cache
   if (key in cache) {
     return cache[key];
   }
 
-  // Call Google
-  try {
-    const result = await geocodeGoogle(key);
+  // Not in cache - geocode in background, return null for now
+  geocodeGoogle(key).then(result => {
     cache[key] = result;
-    saveCache();
-    return result;
-  } catch (err) {
+    console.log(`[geocode] New: "${key}" -> "${result}"`);
+  }).catch(err => {
     console.error(`[geocode] Error geocoding "${key}":`, err.message);
-    return null;
-  }
+    cache[key] = null;
+  });
+
+  return null; // Will be available on next request
 }
 
-// Bulk normalize: geocode an array of unique raw values, with rate limiting
-async function bulkNormalize(rawValues) {
-  let newCount = 0;
+// Bulk normalize (synchronous from cache, queues uncached in background)
+function bulkNormalizeSync(rawValues) {
+  const uncached = [];
   for (const raw of rawValues) {
-    const key = raw.trim();
+    const key = (raw || '').trim();
     if (!key || key === '.' || key in cache) continue;
-
-    try {
-      const result = await geocodeGoogle(key);
-      cache[key] = result;
-      newCount++;
-      // Small delay to respect Google rate limits
-      if (newCount % 10 === 0) {
-        saveCache(); // Save periodically
-        await new Promise(r => setTimeout(r, 100));
-      }
-    } catch (err) {
-      console.error(`[geocode] Error geocoding "${key}":`, err.message);
-      cache[key] = null;
-    }
+    uncached.push(key);
   }
-  if (newCount > 0) {
-    saveCache();
-    console.log(`[geocode] Bulk geocoded ${newCount} new entries. Total cache: ${Object.keys(cache).length}`);
+
+  // Geocode uncached values in background (non-blocking)
+  if (uncached.length > 0) {
+    console.log(`[geocode] ${uncached.length} uncached values - geocoding in background...`);
+    (async () => {
+      for (const key of uncached) {
+        try {
+          const result = await geocodeGoogle(key);
+          cache[key] = result;
+        } catch (err) {
+          cache[key] = null;
+        }
+      }
+      console.log(`[geocode] Background geocoding done. Cache now: ${Object.keys(cache).length} entries`);
+    })();
   }
 }
 
-// Get the full cache (for API endpoint)
+// Get the full cache
 function getCache() {
   return { ...cache };
 }
@@ -118,4 +102,4 @@ function getCache() {
 // Initialize on module load
 loadCache();
 
-module.exports = { normalize, bulkNormalize, getCache, loadCache };
+module.exports = { normalize, bulkNormalizeSync, getCache, loadCache };

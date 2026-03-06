@@ -264,7 +264,7 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
 
-  // 1. Get raw data from DB: LocalDescarga as primary, Fac_Cploc as fallback for "Morada do Cliente"
+  // Get raw data: LocalDescarga as primary, Fac_Cploc as fallback for "Morada do Cliente"/empty
   const result = await query(`
     SELECT
       cd.TotalDocumento,
@@ -277,40 +277,36 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
     WHERE ${where}
   `, params);
 
-  // 2. Determine raw locality for each doc
-  const rows = result.recordset.map(r => {
+  // Queue any uncached values for background geocoding
+  const allRaw = result.recordset.map(r => {
+    const ld = r.localDescarga;
+    return (!ld || ld === '' || ld === '.' || ld === 'Morada do Cliente') ? r.facCploc : ld;
+  }).filter(Boolean);
+  geocode.bulkNormalizeSync([...new Set(allRaw)]);
+
+  // Normalize and aggregate (synchronous from cache)
+  const aggMap = {};
+  for (const r of result.recordset) {
     let raw = r.localDescarga;
-    // Fallback: if empty or "Morada do Cliente", use client's Fac_Cploc
     if (!raw || raw === '' || raw === '.' || raw === 'Morada do Cliente') {
       raw = r.facCploc || null;
     }
-    return { ...r, rawLocality: raw };
-  });
+    if (!raw) continue;
 
-  // 3. Collect unique raw values and bulk geocode any uncached ones
-  const uniqueRaw = [...new Set(rows.map(r => r.rawLocality).filter(Boolean))];
-  await geocode.bulkNormalize(uniqueRaw);
-
-  // 4. Normalize each row and aggregate
-  const aggMap = {};
-  for (const row of rows) {
-    if (!row.rawLocality) continue;
-    const normalized = await geocode.normalize(row.rawLocality);
+    const normalized = geocode.normalize(raw);
     if (!normalized) continue;
 
     if (!aggMap[normalized]) {
-      aggMap[normalized] = { localidade: normalized, numDocumentos: 0, totalVendas: 0, clientes: new Set(), minData: null, maxData: null, somaDoc: 0 };
+      aggMap[normalized] = { localidade: normalized, numDocumentos: 0, totalVendas: 0, clientes: new Set(), minData: null, maxData: null };
     }
     const agg = aggMap[normalized];
     agg.numDocumentos++;
-    agg.totalVendas += row.TotalDocumento || 0;
-    agg.clientes.add(row.Entidade);
-    const d = row.Data;
-    if (!agg.minData || d < agg.minData) agg.minData = d;
-    if (!agg.maxData || d > agg.maxData) agg.maxData = d;
+    agg.totalVendas += r.TotalDocumento || 0;
+    agg.clientes.add(r.Entidade);
+    if (!agg.minData || r.Data < agg.minData) agg.minData = r.Data;
+    if (!agg.maxData || r.Data > agg.maxData) agg.maxData = r.Data;
   }
 
-  // 5. Convert to sorted array
   const data = Object.values(aggMap)
     .map(a => ({
       localidade: a.localidade,
