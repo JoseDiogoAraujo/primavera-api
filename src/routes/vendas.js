@@ -6,8 +6,9 @@ const geocode = require('../geocode');
 
 const router = Router();
 
-const TIPOS_FACTURA = "('FA','FR','FS')";
-const TIPOS_NC = "('NC')";
+const TIPOS_FACTURA = "('FA','FAC','FR','GT')";
+const TIPOS_ABATER = "('ALC','ALI','FAA','NC')";
+const TIPOS_TODOS = "('FA','FAC','FR','GT','ALC','ALI','FAA','NC')";
 
 // GET /vendas/documentos - Listar documentos de venda
 router.get('/documentos', asyncHandler(async (req, res) => {
@@ -223,14 +224,16 @@ router.get('/analytics/resumo', asyncHandler(async (req, res) => {
 
   const result = await query(`
     SELECT
-      SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN TotalDocumento ELSE 0 END) as totalFacturacao,
-      SUM(CASE WHEN TipoDoc IN ${TIPOS_NC} THEN TotalDocumento ELSE 0 END) as totalNotasCredito,
+      SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN TotalDocumento ELSE 0 END)
+      - SUM(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN TotalDocumento ELSE 0 END) as totalFacturacao,
+      SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN TotalDocumento ELSE 0 END) as totalBruto,
+      SUM(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN TotalDocumento ELSE 0 END) as totalAbatimentos,
       COUNT(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN 1 END) as numFacturas,
-      COUNT(CASE WHEN TipoDoc IN ${TIPOS_NC} THEN 1 END) as numNotasCredito,
-      COUNT(DISTINCT Entidade) as numClientes,
+      COUNT(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN 1 END) as numAbatimentos,
+      COUNT(DISTINCT CASE WHEN TipoDoc IN ${TIPOS_TODOS} THEN Entidade END) as numClientes,
       AVG(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN TotalDocumento END) as ticketMedio,
-      MIN(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN Data END) as primeiraFactura,
-      MAX(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN Data END) as ultimaFactura
+      MIN(CASE WHEN TipoDoc IN ${TIPOS_TODOS} THEN Data END) as primeiraFactura,
+      MAX(CASE WHEN TipoDoc IN ${TIPOS_TODOS} THEN Data END) as ultimaFactura
     FROM CabecDoc
     WHERE ${where}
   `, params);
@@ -241,10 +244,12 @@ router.get('/analytics/resumo', asyncHandler(async (req, res) => {
 router.get('/analytics/yoy', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT YEAR(Data) as ano, MONTH(Data) as mes,
-           SUM(TotalDocumento) as totalVendas,
+           SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN TotalDocumento
+                    WHEN TipoDoc IN ${TIPOS_ABATER} THEN -TotalDocumento
+                    ELSE 0 END) as totalVendas,
            COUNT(*) as numDocumentos
     FROM CabecDoc
-    WHERE TipoDoc IN ${TIPOS_FACTURA}
+    WHERE TipoDoc IN ${TIPOS_TODOS}
     GROUP BY YEAR(Data), MONTH(Data)
     ORDER BY ano, mes
   `);
@@ -254,13 +259,13 @@ router.get('/analytics/yoy', asyncHandler(async (req, res) => {
 // GET /vendas/analytics/por-localidade - Vendas por localidade de descarga (para mapa)
 // Usa Google Geocoding API para normalizar automaticamente nomes de localidades
 // Cache persistente em locality-cache.json - geocodifica cada valor distinto uma unica vez
-const TIPOS_DESCARGA = "('FA','FAC','FNT','FR')";
+const TIPOS_VENDA = "('FA','FAC','FR','GT','ALC','ALI','FAA','NC')";
 
 router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   const { dataInicio, dataFim } = parseDateRange(req);
   const topNParam = parseInt(req.query.top);
   const topN = topNParam === 0 ? Infinity : Math.min(500, topNParam || 100);
-  let where = `cd.TipoDoc IN ${TIPOS_DESCARGA}`;
+  let where = `cd.TipoDoc IN ${TIPOS_VENDA}`;
   const params = {};
   if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
@@ -270,6 +275,7 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   // Get raw data: LocalDescarga as primary, Fac_Cploc as fallback for "Morada do Cliente"/empty
   const result = await query(`
     SELECT
+      cd.TipoDoc,
       cd.TotalDocumento,
       cd.Entidade,
       cd.Data,
@@ -307,8 +313,9 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
       aggMap[normalized] = { localidade: normalized, numDocumentos: 0, totalVendas: 0, clientes: new Set(), minData: null, maxData: null };
     }
     const agg = aggMap[normalized];
+    const abater = ['ALC','ALI','FAA','NC'].includes(r.TipoDoc);
     agg.numDocumentos++;
-    agg.totalVendas += r.TotalDocumento || 0;
+    agg.totalVendas += abater ? -(r.TotalDocumento || 0) : (r.TotalDocumento || 0);
     agg.clientes.add(r.Entidade);
     if (!agg.minData || r.Data < agg.minData) agg.minData = r.Data;
     if (!agg.maxData || r.Data > agg.maxData) agg.maxData = r.Data;
