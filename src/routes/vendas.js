@@ -224,14 +224,14 @@ router.get('/analytics/resumo', asyncHandler(async (req, res) => {
 
   const result = await query(`
     SELECT
-      SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN TotalDocumento ELSE 0 END)
-      - SUM(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN TotalDocumento ELSE 0 END) as totalFacturacao,
-      SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN TotalDocumento ELSE 0 END) as totalBruto,
-      SUM(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN TotalDocumento ELSE 0 END) as totalAbatimentos,
+      SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN (TotalDocumento - TotalIva) ELSE 0 END)
+      - SUM(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN (TotalDocumento - TotalIva) ELSE 0 END) as totalFacturacao,
+      SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN (TotalDocumento - TotalIva) ELSE 0 END) as totalBruto,
+      SUM(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN (TotalDocumento - TotalIva) ELSE 0 END) as totalAbatimentos,
       COUNT(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN 1 END) as numFacturas,
       COUNT(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN 1 END) as numAbatimentos,
       COUNT(DISTINCT CASE WHEN TipoDoc IN ${TIPOS_TODOS} THEN Entidade END) as numClientes,
-      AVG(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN TotalDocumento END) as ticketMedio,
+      AVG(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN (TotalDocumento - TotalIva) END) as ticketMedio,
       MIN(CASE WHEN TipoDoc IN ${TIPOS_TODOS} THEN Data END) as primeiraFactura,
       MAX(CASE WHEN TipoDoc IN ${TIPOS_TODOS} THEN Data END) as ultimaFactura
     FROM CabecDoc
@@ -244,8 +244,8 @@ router.get('/analytics/resumo', asyncHandler(async (req, res) => {
 router.get('/analytics/yoy', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT YEAR(Data) as ano, MONTH(Data) as mes,
-           SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN TotalDocumento
-                    WHEN TipoDoc IN ${TIPOS_ABATER} THEN -TotalDocumento
+           SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN (TotalDocumento - TotalIva)
+                    WHEN TipoDoc IN ${TIPOS_ABATER} THEN -(TotalDocumento - TotalIva)
                     ELSE 0 END) as totalVendas,
            COUNT(*) as numDocumentos
     FROM CabecDoc
@@ -276,7 +276,7 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT
       cd.TipoDoc,
-      cd.TotalDocumento,
+      (cd.TotalDocumento - cd.TotalIva) as TotalLiquido,
       cd.Entidade,
       cd.Data,
       LTRIM(RTRIM(cd.LocalDescarga)) as localDescarga,
@@ -315,7 +315,7 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
     const agg = aggMap[normalized];
     const abater = ['ALC','ALI','FAA','NC'].includes(r.TipoDoc);
     agg.numDocumentos++;
-    agg.totalVendas += abater ? -(r.TotalDocumento || 0) : (r.TotalDocumento || 0);
+    agg.totalVendas += abater ? -(r.TotalLiquido || 0) : (r.TotalLiquido || 0);
     agg.clientes.add(r.Entidade);
     if (!agg.minData || r.Data < agg.minData) agg.minData = r.Data;
     if (!agg.maxData || r.Data > agg.maxData) agg.maxData = r.Data;
