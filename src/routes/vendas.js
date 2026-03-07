@@ -219,22 +219,23 @@ router.get('/analytics/resumo', asyncHandler(async (req, res) => {
   const { dataInicio, dataFim } = parseDateRange(req);
   let where = '1=1';
   const params = {};
-  if (dataInicio) { where += ' AND Data >= @dataInicio'; params.dataInicio = dataInicio; }
-  if (dataFim) { where += ' AND Data <= @dataFim'; params.dataFim = dataFim; }
+  if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
+  if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
 
   const result = await query(`
     SELECT
-      SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN (TotalDocumento - TotalIva) ELSE 0 END)
-      - SUM(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN (TotalDocumento - TotalIva) ELSE 0 END) as totalFacturacao,
-      SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN (TotalDocumento - TotalIva) ELSE 0 END) as totalBruto,
-      SUM(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN (TotalDocumento - TotalIva) ELSE 0 END) as totalAbatimentos,
-      COUNT(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN 1 END) as numFacturas,
-      COUNT(CASE WHEN TipoDoc IN ${TIPOS_ABATER} THEN 1 END) as numAbatimentos,
-      COUNT(DISTINCT CASE WHEN TipoDoc IN ${TIPOS_TODOS} THEN Entidade END) as numClientes,
-      AVG(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN (TotalDocumento - TotalIva) END) as ticketMedio,
-      MIN(CASE WHEN TipoDoc IN ${TIPOS_TODOS} THEN Data END) as primeiraFactura,
-      MAX(CASE WHEN TipoDoc IN ${TIPOS_TODOS} THEN Data END) as ultimaFactura
-    FROM CabecDoc
+      SUM(CASE WHEN cd.TipoDoc IN ${TIPOS_FACTURA} THEN (cd.TotalDocumento - cd.TotalIva) ELSE 0 END)
+      - SUM(CASE WHEN cd.TipoDoc IN ${TIPOS_ABATER} THEN (cd.TotalDocumento - cd.TotalIva) ELSE 0 END) as totalFacturacao,
+      SUM(CASE WHEN cd.TipoDoc IN ${TIPOS_FACTURA} THEN (cd.TotalDocumento - cd.TotalIva) ELSE 0 END) as totalBruto,
+      SUM(CASE WHEN cd.TipoDoc IN ${TIPOS_ABATER} THEN (cd.TotalDocumento - cd.TotalIva) ELSE 0 END) as totalAbatimentos,
+      COUNT(CASE WHEN cd.TipoDoc IN ${TIPOS_FACTURA} THEN 1 END) as numFacturas,
+      COUNT(CASE WHEN cd.TipoDoc IN ${TIPOS_ABATER} THEN 1 END) as numAbatimentos,
+      COUNT(DISTINCT CASE WHEN cd.TipoDoc IN ${TIPOS_TODOS} THEN cd.Entidade END) as numClientes,
+      AVG(CASE WHEN cd.TipoDoc IN ${TIPOS_FACTURA} THEN (cd.TotalDocumento - cd.TotalIva) END) as ticketMedio,
+      MIN(CASE WHEN cd.TipoDoc IN ${TIPOS_TODOS} THEN cd.Data END) as primeiraFactura,
+      MAX(CASE WHEN cd.TipoDoc IN ${TIPOS_TODOS} THEN cd.Data END) as ultimaFactura
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc AND cds.Anulado = 0
     WHERE ${where}
   `, params);
   res.json(result.recordset[0]);
@@ -243,14 +244,15 @@ router.get('/analytics/resumo', asyncHandler(async (req, res) => {
 // GET /vendas/analytics/yoy - Year over Year comparison
 router.get('/analytics/yoy', asyncHandler(async (req, res) => {
   const result = await query(`
-    SELECT YEAR(Data) as ano, MONTH(Data) as mes,
-           SUM(CASE WHEN TipoDoc IN ${TIPOS_FACTURA} THEN (TotalDocumento - TotalIva)
-                    WHEN TipoDoc IN ${TIPOS_ABATER} THEN -(TotalDocumento - TotalIva)
+    SELECT YEAR(cd.Data) as ano, MONTH(cd.Data) as mes,
+           SUM(CASE WHEN cd.TipoDoc IN ${TIPOS_FACTURA} THEN (cd.TotalDocumento - cd.TotalIva)
+                    WHEN cd.TipoDoc IN ${TIPOS_ABATER} THEN -(cd.TotalDocumento - cd.TotalIva)
                     ELSE 0 END) as totalVendas,
            COUNT(*) as numDocumentos
-    FROM CabecDoc
-    WHERE TipoDoc IN ${TIPOS_TODOS}
-    GROUP BY YEAR(Data), MONTH(Data)
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc AND cds.Anulado = 0
+    WHERE cd.TipoDoc IN ${TIPOS_TODOS}
+    GROUP BY YEAR(cd.Data), MONTH(cd.Data)
     ORDER BY ano, mes
   `);
   res.json({ data: result.recordset });
@@ -282,6 +284,7 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
       LTRIM(RTRIM(cd.LocalDescarga)) as localDescarga,
       LTRIM(RTRIM(c.Fac_Cploc)) as facCploc
     FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc AND cds.Anulado = 0
     LEFT JOIN Clientes c ON cd.Entidade = c.Cliente
     WHERE ${where}
   `, params);
