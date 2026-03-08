@@ -21,12 +21,11 @@ router.get('/documentos', asyncHandler(async (req, res) => {
   if (req.query.tipoDoc) { where += ' AND cd.TipoDoc = @tipoDoc'; params.tipoDoc = req.query.tipoDoc; }
   if (req.query.cliente) { where += ' AND cd.Entidade = @cliente'; params.cliente = req.query.cliente; }
   if (req.query.nome) { where += ' AND cd.Nome LIKE @nome'; params.nome = `%${req.query.nome}%`; }
-  if (req.query.vendedor) { where += ' AND cd.Vendedor = @vendedor'; params.vendedor = req.query.vendedor; }
   if (req.query.zona) { where += ' AND cd.Zona = @zona'; params.zona = req.query.zona; }
   if (req.query.serie) { where += ' AND cd.Serie = @serie'; params.serie = req.query.serie; }
   if (req.query.moeda) { where += ' AND cd.Moeda = @moeda'; params.moeda = req.query.moeda; }
   if (req.query.numDoc) { where += ' AND cd.NumDoc = @numDoc'; params.numDoc = parseInt(req.query.numDoc); }
-  if (req.query.numDocExterno) { where += ' AND cd.NumDocExterno LIKE @numDocExterno'; params.numDocExterno = `%${req.query.numDocExterno}%`; }
+  if (req.query.referencia) { where += ' AND cd.Referencia LIKE @referencia'; params.referencia = `%${req.query.referencia}%`; }
   if (req.query.totalMin) { where += ' AND cd.TotalDocumento >= @totalMin'; params.totalMin = parseFloat(req.query.totalMin); }
   if (req.query.totalMax) { where += ' AND cd.TotalDocumento <= @totalMax'; params.totalMax = parseFloat(req.query.totalMax); }
   if (req.query.condPag) { where += ' AND cd.CondPag = @condPag'; params.condPag = req.query.condPag; }
@@ -34,25 +33,24 @@ router.get('/documentos', asyncHandler(async (req, res) => {
   if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
 
-  // Filtros por artigo/familia (via linhas)
+  // Filtros por artigo/familia/vendedor (via linhas)
   let joinLinhas = '';
-  if (req.query.artigo) {
+  if (req.query.artigo || req.query.familia || req.query.vendedor) {
     joinLinhas = ' INNER JOIN LinhasDoc ld ON ld.IdCabecDoc = cd.Id';
-    where += ' AND ld.Artigo = @artigo';
-    params.artigo = req.query.artigo;
-  }
-  if (req.query.familia) {
-    if (!joinLinhas) joinLinhas = ' INNER JOIN LinhasDoc ld ON ld.IdCabecDoc = cd.Id';
-    joinLinhas += ' LEFT JOIN Artigo a ON ld.Artigo = a.Artigo';
-    where += ' AND a.Familia = @familia';
-    params.familia = req.query.familia;
+    if (req.query.artigo) { where += ' AND ld.Artigo = @artigo'; params.artigo = req.query.artigo; }
+    if (req.query.vendedor) { where += ' AND ld.Vendedor = @vendedor'; params.vendedor = req.query.vendedor; }
+    if (req.query.familia) {
+      joinLinhas += ' LEFT JOIN Artigo a ON ld.Artigo = a.Artigo';
+      where += ' AND a.Familia = @familia';
+      params.familia = req.query.familia;
+    }
   }
 
   const countResult = await query(`SELECT COUNT(DISTINCT cd.Id) as total FROM CabecDoc cd${joinLinhas} WHERE ${where}`, params);
   const result = await query(`
     SELECT DISTINCT cd.Id, cd.TipoDoc, cd.Serie, cd.NumDoc, cd.Entidade, cd.Nome, cd.Data, cd.DataVencimento,
-           cd.Moeda, cd.TotalMerc, cd.TotalDesc, cd.TotalIva, cd.TotalDocumento, cd.Zona, cd.Vendedor,
-           cd.NumDocExterno, cd.CondPag, cd.ModoPag
+           cd.Moeda, cd.TotalMerc, cd.TotalDesc, cd.TotalIva, cd.TotalDocumento, cd.Zona,
+           cd.Referencia, cd.CondPag, cd.ModoPag
     FROM CabecDoc cd${joinLinhas}
     WHERE ${where}
     ORDER BY cd.Data DESC
