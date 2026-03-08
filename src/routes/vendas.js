@@ -6,32 +6,56 @@ const geocode = require('../geocode');
 
 const router = Router();
 
-const TIPOS_FACTURA = "('FA','FAC','FR','GT')";
-const TIPOS_ABATER = "('ALC','ALI','FAA','NC')";
-const TIPOS_TODOS = "('FA','FAC','FR','GT','ALC','ALI','FAA','NC')";
+const TIPOS_FACTURA = "('FA','FAC','FE2','FI2','FNT','FR')";
+const TIPOS_ABATER = "('ALC','DV','NC','NCT')";
+const TIPOS_TODOS = "('FA','FAC','FE2','FI2','FNT','FR','ALC','DV','NC','NCT')";
 
-// GET /vendas/documentos - Listar documentos de venda
+// GET /vendas/documentos - Listar documentos de venda (filtros avancados)
 router.get('/documentos', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
   const { dataInicio, dataFim } = parseDateRange(req);
-  const tipoDoc = req.query.tipoDoc || '';
-  const cliente = req.query.cliente || '';
 
   let where = '1=1';
   const params = {};
 
-  if (tipoDoc) { where += ' AND TipoDoc = @tipoDoc'; params.tipoDoc = tipoDoc; }
-  if (cliente) { where += ' AND Entidade = @cliente'; params.cliente = cliente; }
-  if (dataInicio) { where += ' AND Data >= @dataInicio'; params.dataInicio = dataInicio; }
-  if (dataFim) { where += ' AND Data <= @dataFim'; params.dataFim = dataFim; }
+  if (req.query.tipoDoc) { where += ' AND cd.TipoDoc = @tipoDoc'; params.tipoDoc = req.query.tipoDoc; }
+  if (req.query.cliente) { where += ' AND cd.Entidade = @cliente'; params.cliente = req.query.cliente; }
+  if (req.query.nome) { where += ' AND cd.Nome LIKE @nome'; params.nome = `%${req.query.nome}%`; }
+  if (req.query.vendedor) { where += ' AND cd.Vendedor = @vendedor'; params.vendedor = req.query.vendedor; }
+  if (req.query.zona) { where += ' AND cd.Zona = @zona'; params.zona = req.query.zona; }
+  if (req.query.serie) { where += ' AND cd.Serie = @serie'; params.serie = req.query.serie; }
+  if (req.query.moeda) { where += ' AND cd.Moeda = @moeda'; params.moeda = req.query.moeda; }
+  if (req.query.numDoc) { where += ' AND cd.NumDoc = @numDoc'; params.numDoc = parseInt(req.query.numDoc); }
+  if (req.query.numDocExterno) { where += ' AND cd.NumDocExterno LIKE @numDocExterno'; params.numDocExterno = `%${req.query.numDocExterno}%`; }
+  if (req.query.totalMin) { where += ' AND cd.TotalDocumento >= @totalMin'; params.totalMin = parseFloat(req.query.totalMin); }
+  if (req.query.totalMax) { where += ' AND cd.TotalDocumento <= @totalMax'; params.totalMax = parseFloat(req.query.totalMax); }
+  if (req.query.condPag) { where += ' AND cd.CondPag = @condPag'; params.condPag = req.query.condPag; }
+  if (req.query.pais) { where += ' AND cd.Pais = @pais'; params.pais = req.query.pais; }
+  if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
+  if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
 
-  const countResult = await query(`SELECT COUNT(*) as total FROM CabecDoc WHERE ${where}`, params);
+  // Filtros por artigo/familia (via linhas)
+  let joinLinhas = '';
+  if (req.query.artigo) {
+    joinLinhas = ' INNER JOIN LinhasDoc ld ON ld.IdCabecDoc = cd.Id';
+    where += ' AND ld.Artigo = @artigo';
+    params.artigo = req.query.artigo;
+  }
+  if (req.query.familia) {
+    if (!joinLinhas) joinLinhas = ' INNER JOIN LinhasDoc ld ON ld.IdCabecDoc = cd.Id';
+    joinLinhas += ' LEFT JOIN Artigo a ON ld.Artigo = a.Artigo';
+    where += ' AND a.Familia = @familia';
+    params.familia = req.query.familia;
+  }
+
+  const countResult = await query(`SELECT COUNT(DISTINCT cd.Id) as total FROM CabecDoc cd${joinLinhas} WHERE ${where}`, params);
   const result = await query(`
-    SELECT Id, TipoDoc, Serie, NumDoc, Entidade, Nome, Data, DataVencimento,
-           Moeda, TotalMerc, TotalDesc, TotalIva, TotalDocumento, Zona
-    FROM CabecDoc
+    SELECT DISTINCT cd.Id, cd.TipoDoc, cd.Serie, cd.NumDoc, cd.Entidade, cd.Nome, cd.Data, cd.DataVencimento,
+           cd.Moeda, cd.TotalMerc, cd.TotalDesc, cd.TotalIva, cd.TotalDocumento, cd.Zona, cd.Vendedor,
+           cd.NumDocExterno, cd.CondPag, cd.ModoPag
+    FROM CabecDoc cd${joinLinhas}
     WHERE ${where}
-    ORDER BY Data DESC
+    ORDER BY cd.Data DESC
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `, { ...params, offset, limit });
 
@@ -258,10 +282,68 @@ router.get('/analytics/yoy', asyncHandler(async (req, res) => {
   res.json({ data: result.recordset });
 }));
 
+// GET /vendas/analytics/por-tipodoc - Vendas por tipo de documento
+router.get('/analytics/por-tipodoc', asyncHandler(async (req, res) => {
+  const { dataInicio, dataFim } = parseDateRange(req);
+  let where = 's.Anulado = 0';
+  const params = {};
+  if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
+  if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
+
+  const result = await query(`
+    SELECT cd.TipoDoc, t.Descricao, COUNT(*) as totalDocs,
+           SUM(cd.TotalDocumento) as totalValor,
+           COUNT(DISTINCT cd.Entidade) as totalClientes
+    FROM CabecDoc cd
+    JOIN CabecDocStatus s ON s.IdCabecDoc = cd.Id
+    LEFT JOIN TiposDoc t ON t.Documento = cd.TipoDoc
+    WHERE ${where}
+    GROUP BY cd.TipoDoc, t.Descricao
+    ORDER BY totalValor DESC
+  `, params);
+  res.json({ data: result.recordset });
+}));
+
+// GET /vendas/encomendas - Encomendas pendentes (tipo EC)
+router.get('/encomendas', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT cd.Id, cd.Serie, cd.NumDoc, cd.Entidade, c.Nome, cd.Data, cd.TotalDocumento,
+           cd.Estado, cd.Observacoes
+    FROM CabecDoc cd
+    JOIN CabecDocStatus s ON s.IdCabecDoc = cd.Id
+    LEFT JOIN Clientes c ON c.Cliente = cd.Entidade
+    WHERE cd.TipoDoc = 'EC' AND s.Anulado = 0 AND s.Fechado = 0
+    ORDER BY cd.Data DESC
+  `);
+  res.json({ data: result.recordset });
+}));
+
+// GET /vendas/encomendas/:id - Detalhes de uma encomenda com linhas
+router.get('/encomendas/:id', asyncHandler(async (req, res) => {
+  const cabec = await query(`
+    SELECT cd.*
+    FROM CabecDoc cd
+    JOIN CabecDocStatus s ON s.IdCabecDoc = cd.Id
+    WHERE cd.Id = @id AND cd.TipoDoc = 'EC'
+  `, { id: parseInt(req.params.id) });
+  if (!cabec.recordset.length) return res.status(404).json({ error: 'Encomenda nao encontrada' });
+
+  const linhas = await query(`
+    SELECT Id, NumLinha, Artigo, Descricao, Quantidade, Unidade, PrecUnit,
+           Desconto1, Desconto2, Desconto3, PrecoLiquido, TotalIliquido,
+           CodIva, TaxaIva, TotalIva, Armazem, Lote, Vendedor
+    FROM LinhasDoc
+    WHERE IdCabecDoc = @id
+    ORDER BY NumLinha
+  `, { id: parseInt(req.params.id) });
+
+  res.json({ cabecalho: cabec.recordset[0], linhas: linhas.recordset });
+}));
+
 // GET /vendas/analytics/por-localidade - Vendas por localidade de descarga (para mapa)
 // Usa Google Geocoding API para normalizar automaticamente nomes de localidades
 // Cache persistente em locality-cache.json - geocodifica cada valor distinto uma unica vez
-const TIPOS_VENDA = "('FA','FAC','FR','GT','ALC','ALI','FAA','NC')";
+const TIPOS_VENDA = TIPOS_TODOS;
 
 router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
   const { dataInicio, dataFim } = parseDateRange(req);
@@ -316,7 +398,7 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
       aggMap[normalized] = { localidade: normalized, numDocumentos: 0, totalVendas: 0, clientes: new Set(), minData: null, maxData: null };
     }
     const agg = aggMap[normalized];
-    const abater = ['ALC','ALI','FAA','NC'].includes(r.TipoDoc);
+    const abater = ['ALC','DV','NC','NCT'].includes(r.TipoDoc);
     agg.numDocumentos++;
     agg.totalVendas += abater ? -(r.TotalLiquido || 0) : (r.TotalLiquido || 0);
     agg.clientes.add(r.Entidade);

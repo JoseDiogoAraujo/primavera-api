@@ -86,6 +86,44 @@ router.get('/analytics/por-departamento', asyncHandler(async (req, res) => {
   }
 }));
 
+// GET /rh/analytics/por-situacao - Funcionarios por situacao
+router.get('/analytics/por-situacao', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT SituacaoActual, COUNT(*) as total
+    FROM Funcionarios
+    GROUP BY SituacaoActual
+    ORDER BY total DESC
+  `);
+  res.json({ data: result.recordset });
+}));
+
+// GET /rh/analytics/vencimentos - Distribuicao salarial
+router.get('/analytics/vencimentos', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT
+      CASE
+        WHEN Vencimento < 1000 THEN '< 1000'
+        WHEN Vencimento BETWEEN 1000 AND 1500 THEN '1000-1500'
+        WHEN Vencimento BETWEEN 1500 AND 2000 THEN '1500-2000'
+        WHEN Vencimento BETWEEN 2000 AND 3000 THEN '2000-3000'
+        WHEN Vencimento > 3000 THEN '> 3000'
+      END as faixa,
+      COUNT(*) as total,
+      AVG(Vencimento) as mediaVencimento
+    FROM Funcionarios
+    WHERE Vencimento > 0
+    GROUP BY CASE
+        WHEN Vencimento < 1000 THEN '< 1000'
+        WHEN Vencimento BETWEEN 1000 AND 1500 THEN '1000-1500'
+        WHEN Vencimento BETWEEN 1500 AND 2000 THEN '1500-2000'
+        WHEN Vencimento BETWEEN 2000 AND 3000 THEN '2000-3000'
+        WHEN Vencimento > 3000 THEN '> 3000'
+      END
+    ORDER BY MIN(Vencimento)
+  `);
+  res.json({ data: result.recordset });
+}));
+
 // GET /rh/analytics/antiguidade
 router.get('/analytics/antiguidade', asyncHandler(async (req, res) => {
   const result = await query(`
@@ -98,6 +136,13 @@ router.get('/analytics/antiguidade', asyncHandler(async (req, res) => {
       AVG(DATEDIFF(YEAR, DataAdmissao, GETDATE())) as antiguidadeMedia
     FROM Funcionarios
   `);
+  res.json(result.recordset[0]);
+}));
+
+// GET /rh/funcionarios/:id - Detalhe de funcionario
+router.get('/funcionarios/:id', asyncHandler(async (req, res) => {
+  const result = await query('SELECT * FROM Funcionarios WHERE Codigo = @id', { id: req.params.id });
+  if (!result.recordset.length) return res.status(404).json({ error: 'Funcionario nao encontrado' });
   res.json(result.recordset[0]);
 }));
 

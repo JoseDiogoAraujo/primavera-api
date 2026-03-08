@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { query } = require('../db');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { parsePagination } = require('../middleware/pagination');
+const { parsePagination, parseDateRange } = require('../middleware/pagination');
 
 const router = Router();
 
@@ -25,6 +25,55 @@ router.get('/contas', asyncHandler(async (req, res) => {
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `, { ...params, offset, limit });
   res.json({ page, limit, total: countResult.recordset[0].total, data: result.recordset });
+}));
+
+// GET /financeiro/movimentos - Movimentos contabilisticos
+router.get('/movimentos', asyncHandler(async (req, res) => {
+  const { limit, offset, page } = parsePagination(req);
+  const { dataInicio, dataFim } = parseDateRange(req);
+
+  let where = '1=1';
+  const params = {};
+  if (dataInicio) { where += ' AND m.Data >= @dataInicio'; params.dataInicio = dataInicio; }
+  if (dataFim) { where += ' AND m.Data <= @dataFim'; params.dataFim = dataFim; }
+
+  const countResult = await query(`SELECT COUNT(*) as total FROM MovCBL m WHERE ${where}`, params);
+  const result = await query(`
+    SELECT m.Id, m.Exercicio, m.Diario, m.NumDiario, m.Data, m.Descricao, m.TipoDocumento, m.Modulo
+    FROM MovCBL m
+    WHERE ${where}
+    ORDER BY m.Data DESC, m.Id DESC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+  `, { ...params, offset, limit });
+  res.json({ page, limit, total: countResult.recordset[0].total, data: result.recordset });
+}));
+
+// GET /financeiro/movimentos/:id - Detalhe de movimento contabilistico com linhas
+router.get('/movimentos/:id', asyncHandler(async (req, res) => {
+  const header = await query('SELECT * FROM MovCBL WHERE Id = @id', { id: req.params.id });
+  if (!header.recordset.length) return res.status(404).json({ error: 'Movimento nao encontrado' });
+
+  const lines = await query(`
+    SELECT l.*, p.Descricao as ContaDescricao
+    FROM LinMovCBL l
+    LEFT JOIN PlanoContas p ON p.Conta = l.Conta
+    WHERE l.IdMovCBL = @id
+    ORDER BY l.Id
+  `, { id: req.params.id });
+
+  res.json({ ...header.recordset[0], linhas: lines.recordset });
+}));
+
+// GET /financeiro/centros-custo - Centros de custo
+router.get('/centros-custo', asyncHandler(async (req, res) => {
+  const result = await query('SELECT CCusto, Descricao FROM CentrosCusto ORDER BY CCusto');
+  res.json({ data: result.recordset });
+}));
+
+// GET /financeiro/diarios - Diarios contabilisticos
+router.get('/diarios', asyncHandler(async (req, res) => {
+  const result = await query('SELECT Diario, Descricao FROM Diarios ORDER BY Diario');
+  res.json({ data: result.recordset });
 }));
 
 // GET /financeiro/pendentes/clientes - Dividas de clientes
@@ -66,6 +115,21 @@ router.get('/pendentes/fornecedores', asyncHandler(async (req, res) => {
   res.json({ page, limit, data: result.recordset });
 }));
 
+// GET /financeiro/pendentes/por-documento - Pendentes agrupados por tipo de documento
+router.get('/pendentes/por-documento', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT TipoEntidade, TipoDoc, COUNT(*) as numDocumentos,
+      SUM(ValorPendente) as totalPendente,
+      SUM(CASE WHEN DataVenc < GETDATE() THEN ValorPendente ELSE 0 END) as totalVencido,
+      MIN(DataVenc) as vencimentoMaisAntigo
+    FROM Pendentes
+    WHERE ValorPendente > 0
+    GROUP BY TipoEntidade, TipoDoc
+    ORDER BY TipoEntidade, totalPendente DESC
+  `);
+  res.json({ data: result.recordset });
+}));
+
 // GET /financeiro/pendentes/aging - Analise de antiguidade de divida
 router.get('/pendentes/aging', asyncHandler(async (req, res) => {
   const tipo = req.query.tipo || 'C';
@@ -101,6 +165,24 @@ router.get('/pendentes/resumo', asyncHandler(async (req, res) => {
   const r = result.recordset[0];
   r.saldoLiquido = (r.totalReceber || 0) - (r.totalPagar || 0);
   res.json(r);
+}));
+
+// GET /financeiro/tesouraria/movimentos - Movimentos de tesouraria
+router.get('/tesouraria/movimentos', asyncHandler(async (req, res) => {
+  const { dataInicio, dataFim } = parseDateRange(req);
+
+  let where = '1=1';
+  const params = {};
+  if (dataInicio) { where += ' AND c.Data >= @dataInicio'; params.dataInicio = dataInicio; }
+  if (dataFim) { where += ' AND c.Data <= @dataFim'; params.dataFim = dataFim; }
+
+  const result = await query(`
+    SELECT c.Id, c.TipoDoc, c.Serie, c.NumDoc, c.Entidade, c.TipoEntidade, c.Data, c.Moeda, c.TotalDocumento
+    FROM CabecMovCCT c
+    WHERE ${where}
+    ORDER BY c.Data DESC
+  `, params);
+  res.json({ data: result.recordset });
 }));
 
 module.exports = router;

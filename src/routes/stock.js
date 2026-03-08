@@ -59,6 +59,18 @@ router.get('/por-familia', asyncHandler(async (req, res) => {
   res.json({ data: result.recordset });
 }));
 
+// GET /stock/por-localizacao - Stock agrupado por localizacao
+router.get('/por-localizacao', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT a.Artigo, a.Descricao, a.Localizacao, a.ArmazemSugestao as Armazem,
+      a.STKActual, a.STKActual * a.PCMedio as valorStock
+    FROM Artigo a
+    WHERE a.MovStock = 'S' AND a.STKActual > 0 AND a.Localizacao IS NOT NULL AND a.Localizacao != ''
+    ORDER BY a.Localizacao, a.Artigo
+  `);
+  res.json({ data: result.recordset });
+}));
+
 // GET /stock/alertas - Artigos com stock critico
 router.get('/alertas', asyncHandler(async (req, res) => {
   const result = await query(`
@@ -80,6 +92,75 @@ router.get('/alertas', asyncHandler(async (req, res) => {
       deficit DESC
   `);
   res.json({ total: result.recordset.length, data: result.recordset });
+}));
+
+// GET /stock/numeros-serie - Numeros de serie
+router.get('/numeros-serie', asyncHandler(async (req, res) => {
+  const artigo = req.query.artigo || '';
+  const armazem = req.query.armazem || '';
+
+  let where = '1=1';
+  const params = {};
+  if (artigo) { where += ' AND Artigo = @artigo'; params.artigo = artigo; }
+  if (armazem) { where += ' AND Armazem = @armazem'; params.armazem = armazem; }
+
+  const result = await query(`
+    SELECT Artigo, NumeroSerie, Armazem, Localizacao, Lote, EstadoStock, Documento
+    FROM INV_NumerosSerie
+    WHERE ${where}
+    ORDER BY Artigo, NumeroSerie
+  `, params);
+  res.json({ data: result.recordset });
+}));
+
+// GET /stock/transferencias - Transferencias de stock
+router.get('/transferencias', asyncHandler(async (req, res) => {
+  const { dataInicio, dataFim } = parseDateRange(req);
+
+  let where = '1=1';
+  const params = {};
+  if (dataInicio) { where += ' AND ct.Data >= @dataInicio'; params.dataInicio = dataInicio; }
+  if (dataFim) { where += ' AND ct.Data <= @dataFim'; params.dataFim = dataFim; }
+
+  const result = await query(`
+    SELECT ct.ID, ct.TipoDoc, ct.NumDoc, ct.Serie, ct.Entidade, ct.Data, ct.Observacoes,
+      ct.Moeda, ct.TipoEntidade
+    FROM INV_CabecTransferencias ct
+    WHERE ${where}
+    ORDER BY ct.Data DESC
+  `, params);
+  res.json({ data: result.recordset });
+}));
+
+// GET /stock/transferencias/:id - Detalhe de transferencia com linhas
+router.get('/transferencias/:id', asyncHandler(async (req, res) => {
+  const header = await query('SELECT * FROM INV_CabecTransferencias WHERE ID = @id', { id: req.params.id });
+  if (!header.recordset.length) return res.status(404).json({ error: 'Transferencia nao encontrada' });
+
+  const lines = await query(`
+    SELECT * FROM INV_LinhasTransferencias
+    WHERE IdCabecTransferencias = @id
+    ORDER BY NumLinha
+  `, { id: req.params.id });
+
+  res.json({ ...header.recordset[0], linhas: lines.recordset });
+}));
+
+// GET /stock/lotes - Lotes de artigos
+router.get('/lotes', asyncHandler(async (req, res) => {
+  const artigo = req.query.artigo || '';
+
+  let where = "Lote IS NOT NULL AND Lote != ''";
+  const params = {};
+  if (artigo) { where += ' AND Artigo = @artigo'; params.artigo = artigo; }
+
+  const result = await query(`
+    SELECT DISTINCT Artigo, Lote, Armazem, Localizacao
+    FROM INV_Movimentos
+    WHERE ${where}
+    ORDER BY Artigo, Lote
+  `, params);
+  res.json({ data: result.recordset });
 }));
 
 // GET /stock/movimentos - Movimentos de stock recentes

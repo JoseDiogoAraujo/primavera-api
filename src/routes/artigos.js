@@ -61,6 +61,22 @@ router.get('/analytics/valor-stock', asyncHandler(async (req, res) => {
   res.json(result.recordset[0]);
 }));
 
+// GET /artigos/analytics/por-familia - Contagem e valor de stock por familia
+router.get('/analytics/por-familia', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT a.Familia, f.Descricao,
+      COUNT(*) as totalArtigos,
+      SUM(CASE WHEN a.STKActual > 0 THEN 1 ELSE 0 END) as comStock,
+      SUM(a.STKActual) as stockTotal,
+      SUM(a.STKActual * a.PCMedio) as valorStock
+    FROM Artigo a
+    LEFT JOIN Familias f ON f.Familia = a.Familia
+    GROUP BY a.Familia, f.Descricao
+    ORDER BY valorStock DESC
+  `);
+  res.json({ total: result.recordset.length, data: result.recordset });
+}));
+
 // GET /artigos/:id
 router.get('/:id', asyncHandler(async (req, res) => {
   const result = await query('SELECT * FROM Artigo WHERE Artigo = @id', { id: req.params.id });
@@ -80,6 +96,29 @@ router.get('/:id/movimentos', asyncHandler(async (req, res) => {
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `, { id: req.params.id, offset, limit });
   res.json({ page, limit, data: result.recordset });
+}));
+
+// GET /artigos/:id/fornecedores - Fornecedores do artigo
+router.get('/:id/fornecedores', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT af.Fornecedor, f.Nome, af.RefFornecedor, af.UnidadeCompra,
+      af.PrecoCompra, af.Desconto1, af.Desconto2, af.PrazoEntrega, af.FornecedorPrincipal
+    FROM ArtigoFornecedor af
+    JOIN Fornecedores f ON f.Fornecedor = af.Fornecedor
+    WHERE af.Artigo = @id
+    ORDER BY af.FornecedorPrincipal DESC, af.PrecoCompra
+  `, { id: req.params.id });
+  res.json({ total: result.recordset.length, data: result.recordset });
+}));
+
+// GET /artigos/:id/precos - Precos do artigo
+router.get('/:id/precos', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT Artigo, Descricao, PVP1, PVP2, PVP3, PVP4, PVP5, PVP6, PCMedio, PCUltimo, PCPadrao, Margem
+    FROM Artigo WHERE Artigo = @id
+  `, { id: req.params.id });
+  if (!result.recordset.length) return res.status(404).json({ error: 'Artigo nao encontrado' });
+  res.json(result.recordset[0]);
 }));
 
 module.exports = router;

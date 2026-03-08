@@ -5,27 +5,48 @@ const { parsePagination, parseDateRange } = require('../middleware/pagination');
 
 const router = Router();
 
-// GET /compras/documentos
+// GET /compras/documentos - Listar documentos de compra (filtros avancados)
 router.get('/documentos', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
   const { dataInicio, dataFim } = parseDateRange(req);
-  const tipoDoc = req.query.tipoDoc || '';
-  const fornecedor = req.query.fornecedor || '';
 
   let where = '1=1';
   const params = {};
-  if (tipoDoc) { where += ' AND TipoDoc = @tipoDoc'; params.tipoDoc = tipoDoc; }
-  if (fornecedor) { where += ' AND Entidade = @fornecedor'; params.fornecedor = fornecedor; }
-  if (dataInicio) { where += ' AND DataDoc >= @dataInicio'; params.dataInicio = dataInicio; }
-  if (dataFim) { where += ' AND DataDoc <= @dataFim'; params.dataFim = dataFim; }
 
-  const countResult = await query(`SELECT COUNT(*) as total FROM CabecCompras WHERE ${where}`, params);
+  if (req.query.tipoDoc) { where += ' AND cc.TipoDoc = @tipoDoc'; params.tipoDoc = req.query.tipoDoc; }
+  if (req.query.fornecedor) { where += ' AND cc.Entidade = @fornecedor'; params.fornecedor = req.query.fornecedor; }
+  if (req.query.nome) { where += ' AND cc.Nome LIKE @nome'; params.nome = `%${req.query.nome}%`; }
+  if (req.query.serie) { where += ' AND cc.Serie = @serie'; params.serie = req.query.serie; }
+  if (req.query.moeda) { where += ' AND cc.Moeda = @moeda'; params.moeda = req.query.moeda; }
+  if (req.query.numDoc) { where += ' AND cc.NumDoc = @numDoc'; params.numDoc = parseInt(req.query.numDoc); }
+  if (req.query.numDocExterno) { where += ' AND cc.NumDocExterno LIKE @numDocExterno'; params.numDocExterno = `%${req.query.numDocExterno}%`; }
+  if (req.query.totalMin) { where += ' AND cc.TotalDocumento >= @totalMin'; params.totalMin = parseFloat(req.query.totalMin); }
+  if (req.query.totalMax) { where += ' AND cc.TotalDocumento <= @totalMax'; params.totalMax = parseFloat(req.query.totalMax); }
+  if (req.query.condPag) { where += ' AND cc.CondPag = @condPag'; params.condPag = req.query.condPag; }
+  if (dataInicio) { where += ' AND cc.DataDoc >= @dataInicio'; params.dataInicio = dataInicio; }
+  if (dataFim) { where += ' AND cc.DataDoc <= @dataFim'; params.dataFim = dataFim; }
+
+  // Filtros por artigo/familia (via linhas)
+  let joinLinhas = '';
+  if (req.query.artigo) {
+    joinLinhas = ' INNER JOIN LinhasCompras lc ON lc.IdCabecCompras = cc.Id';
+    where += ' AND lc.Artigo = @artigo';
+    params.artigo = req.query.artigo;
+  }
+  if (req.query.familia) {
+    if (!joinLinhas) joinLinhas = ' INNER JOIN LinhasCompras lc ON lc.IdCabecCompras = cc.Id';
+    joinLinhas += ' LEFT JOIN Artigo a ON lc.Artigo = a.Artigo';
+    where += ' AND a.Familia = @familia';
+    params.familia = req.query.familia;
+  }
+
+  const countResult = await query(`SELECT COUNT(DISTINCT cc.Id) as total FROM CabecCompras cc${joinLinhas} WHERE ${where}`, params);
   const result = await query(`
-    SELECT Id, TipoDoc, Serie, NumDoc, Entidade, Nome, DataDoc, NumDocExterno,
-           Moeda, TotalMerc, TotalDesc, TotalIva, TotalDocumento
-    FROM CabecCompras
+    SELECT DISTINCT cc.Id, cc.TipoDoc, cc.Serie, cc.NumDoc, cc.Entidade, cc.Nome, cc.DataDoc, cc.NumDocExterno,
+           cc.Moeda, cc.TotalMerc, cc.TotalDesc, cc.TotalIva, cc.TotalDocumento, cc.CondPag
+    FROM CabecCompras cc${joinLinhas}
     WHERE ${where}
-    ORDER BY DataDoc DESC
+    ORDER BY cc.DataDoc DESC
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `, { ...params, offset, limit });
 
@@ -137,6 +158,57 @@ router.get('/analytics/resumo', asyncHandler(async (req, res) => {
     WHERE ${where}
   `, params);
   res.json(result.recordset[0]);
+}));
+
+// GET /compras/analytics/por-tipodoc - Compras por tipo de documento
+router.get('/analytics/por-tipodoc', asyncHandler(async (req, res) => {
+  const { dataInicio, dataFim } = parseDateRange(req);
+  let where = '(s.Anulado IS NULL OR s.Anulado = 0)';
+  const params = {};
+  if (dataInicio) { where += ' AND cc.DataDoc >= @dataInicio'; params.dataInicio = dataInicio; }
+  if (dataFim) { where += ' AND cc.DataDoc <= @dataFim'; params.dataFim = dataFim; }
+
+  const result = await query(`
+    SELECT cc.TipoDoc, COUNT(*) as totalDocs,
+           SUM(cc.TotalDocumento) as totalValor,
+           COUNT(DISTINCT cc.Entidade) as totalFornecedores
+    FROM CabecCompras cc
+    LEFT JOIN CabecComprasStatus s ON s.IdCabecCompras = cc.Id
+    WHERE ${where}
+    GROUP BY cc.TipoDoc
+    ORDER BY totalValor DESC
+  `, params);
+  res.json({ data: result.recordset });
+}));
+
+// GET /compras/analytics/yoy - Year over Year comparison
+router.get('/analytics/yoy', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT YEAR(cc.DataDoc) as ano, MONTH(cc.DataDoc) as mes,
+           SUM(cc.TotalDocumento) as total,
+           COUNT(*) as numDocumentos,
+           COUNT(DISTINCT cc.Entidade) as numFornecedores
+    FROM CabecCompras cc
+    LEFT JOIN CabecComprasStatus s ON s.IdCabecCompras = cc.Id
+    WHERE (s.Anulado IS NULL OR s.Anulado = 0)
+    GROUP BY YEAR(cc.DataDoc), MONTH(cc.DataDoc)
+    ORDER BY ano, mes
+  `);
+  res.json({ data: result.recordset });
+}));
+
+// GET /compras/encomendas - Encomendas de compra pendentes (tipo ECF)
+router.get('/encomendas', asyncHandler(async (req, res) => {
+  const result = await query(`
+    SELECT cc.Id, cc.Serie, cc.NumDoc, cc.Entidade, f.Nome, cc.DataDoc, cc.TotalDocumento,
+           cc.Estado, cc.NumDocExterno, cc.Observacoes
+    FROM CabecCompras cc
+    LEFT JOIN CabecComprasStatus s ON s.IdCabecCompras = cc.Id
+    LEFT JOIN Fornecedores f ON f.Fornecedor = cc.Entidade
+    WHERE cc.TipoDoc = 'ECF' AND (s.Anulado IS NULL OR s.Anulado = 0) AND (s.Fechado IS NULL OR s.Fechado = 0)
+    ORDER BY cc.DataDoc DESC
+  `);
+  res.json({ data: result.recordset });
 }));
 
 module.exports = router;
