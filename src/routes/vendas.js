@@ -87,7 +87,7 @@ router.get('/top', asyncHandler(async (req, res) => {
   const por = req.query.por || 'cliente';
   const topN = Math.min(100, parseInt(req.query.top) || 10);
   const { dataInicio, dataFim } = parseDateRange(req);
-  let where = "cd.TipoDoc IN ('FA','FAC','FE2','FI2','FNT','FR')";
+  let where = "cd.TipoDoc IN ('FA','FAC','FI','FE2','FIT','FNT','FR','FR1','FRI','NC','NCE','NCI','NCT','ND') AND cds.Anulado = 0";
   const params = {};
   if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
@@ -99,6 +99,7 @@ router.get('/top', asyncHandler(async (req, res) => {
              SUM(ld.TotalIliquido) as total, SUM(ld.Quantidade) as quantidade, COUNT(DISTINCT cd.Entidade) as numClientes
       FROM LinhasDoc ld
       INNER JOIN CabecDoc cd ON ld.IdCabecDoc = cd.Id
+      INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
       LEFT JOIN Artigo a ON ld.Artigo = a.Artigo
       WHERE ${where}
       GROUP BY ld.Artigo, a.Descricao
@@ -109,6 +110,7 @@ router.get('/top', asyncHandler(async (req, res) => {
              SUM(ld.TotalIliquido) as total, COUNT(DISTINCT cd.Id) as numDocumentos, COUNT(DISTINCT cd.Entidade) as numClientes
       FROM LinhasDoc ld
       INNER JOIN CabecDoc cd ON ld.IdCabecDoc = cd.Id
+      INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
       LEFT JOIN Vendedores v ON ld.Vendedor = v.Vendedor
       WHERE ${where}
       GROUP BY ld.Vendedor, v.Nome
@@ -116,8 +118,9 @@ router.get('/top', asyncHandler(async (req, res) => {
   } else {
     sql = `
       SELECT TOP (@topN) cd.Entidade as codigo, c.Nome as nome,
-             SUM(cd.TotalDocumento) as total, COUNT(*) as numDocumentos
+             SUM(cd.TotalDocumento - cd.TotalIva) as total, COUNT(*) as numDocumentos
       FROM CabecDoc cd
+      INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
       LEFT JOIN Clientes c ON cd.Entidade = c.Cliente
       WHERE ${where}
       GROUP BY cd.Entidade, c.Nome
