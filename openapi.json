@@ -959,6 +959,7 @@
     },
     "/vendas/recentes/{cliente}": {
       "get": {
+        "operationId": "getVendasRecentes",
         "tags": ["Vendas"],
         "summary": "Faturas (FA) do ano passado de um cliente",
         "description": "Retorna todas as faturas (TipoDoc=FA) do ano anterior para o cliente especificado. Exclui documentos anulados.",
