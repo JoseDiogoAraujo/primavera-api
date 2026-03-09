@@ -957,6 +957,54 @@
         }
       }
     },
+    "/vendas/recentes/{cliente}": {
+      "get": {
+        "tags": ["Vendas"],
+        "summary": "Faturas (FA) do ano passado de um cliente",
+        "description": "Retorna todas as faturas (TipoDoc=FA) do ano anterior para o cliente especificado. Exclui documentos anulados.",
+        "parameters": [
+          { "name": "cliente", "in": "path", "required": true, "description": "Codigo do cliente", "schema": { "type": "string" }, "example": "08034" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de faturas do ano passado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cliente": { "type": "string", "example": "08034" },
+                    "ano": { "type": "integer", "example": 2025 },
+                    "totalDocumentos": { "type": "integer", "example": 15 },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "Id": { "type": "string" },
+                          "TipoDoc": { "type": "string", "example": "FA" },
+                          "Serie": { "type": "string" },
+                          "NumDoc": { "type": "integer" },
+                          "Entidade": { "type": "string" },
+                          "Nome": { "type": "string" },
+                          "Data": { "type": "string", "format": "date" },
+                          "TotalMerc": { "type": "number" },
+                          "TotalDesc": { "type": "number" },
+                          "TotalIva": { "type": "number" },
+                          "TotalDocumento": { "type": "number" },
+                          "Moeda": { "type": "string" },
+                          "CondPag": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/compras/documentos": {
       "get": {
         "tags": ["Compras"],
