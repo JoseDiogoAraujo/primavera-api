@@ -131,4 +131,32 @@ router.get('/top', asyncHandler(async (req, res) => {
   res.json({ por, top: topN, data: result.recordset });
 }));
 
+// GET /vendas/recentes/:cliente - Faturas (FA) do ano passado de um cliente
+router.get('/recentes/:cliente', asyncHandler(async (req, res) => {
+  const cliente = req.params.cliente;
+  const anoPassado = new Date().getFullYear() - 1;
+  const dataInicio = `${anoPassado}-01-01`;
+  const dataFim = `${anoPassado}-12-31`;
+
+  const result = await query(`
+    SELECT cd.Id, cd.TipoDoc, cd.Serie, cd.NumDoc, cd.Entidade, cd.Nome, cd.Data,
+           cd.TotalMerc, cd.TotalDesc, cd.TotalIva, cd.TotalDocumento, cd.Moeda, cd.CondPag
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE cd.TipoDoc = 'FA'
+      AND cd.Entidade = @cliente
+      AND cds.Anulado = 0
+      AND cd.Data >= @dataInicio
+      AND cd.Data <= @dataFim
+    ORDER BY cd.Data DESC
+  `, { cliente, dataInicio, dataFim });
+
+  res.json({
+    cliente,
+    ano: anoPassado,
+    totalDocumentos: result.recordset.length,
+    data: result.recordset
+  });
+}));
+
 module.exports = router;
