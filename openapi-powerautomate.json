@@ -1,0 +1,3262 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Primavera V10 API",
+    "version": "3.1.0",
+    "description": "REST API read-only para dados do ERP Primavera V10 Executive (Cegid) da Cimenteira do Louro. Valores em EUR."
+  },
+  "host": "primavera-api.cimenteiradolouro.local",
+  "basePath": "/api",
+  "schemes": [
+    "http"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "securityDefinitions": {
+    "basicAuth": {
+      "type": "basic",
+      "description": "Autenticacao Basic (utilizador e password)"
+    }
+  },
+  "security": [
+    {
+      "basicAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Sistema",
+      "description": "Health check e info BD"
+    },
+    {
+      "name": "Base",
+      "description": "Tabelas mestras"
+    },
+    {
+      "name": "Clientes",
+      "description": "Gestao de clientes"
+    },
+    {
+      "name": "Fornecedores",
+      "description": "Gestao de fornecedores"
+    },
+    {
+      "name": "Artigos",
+      "description": "Catalogo de artigos/produtos"
+    },
+    {
+      "name": "Vendas",
+      "description": "Documentos de venda"
+    },
+    {
+      "name": "Compras",
+      "description": "Documentos de compra"
+    },
+    {
+      "name": "Stock",
+      "description": "Inventario e stock"
+    },
+    {
+      "name": "Financeiro",
+      "description": "Financeiro e pendentes"
+    },
+    {
+      "name": "Query",
+      "description": "SQL read-only"
+    },
+    {
+      "name": "Copilot",
+      "description": "Contexto para LLM"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Sistema"
+        ],
+        "operationId": "GetHealth",
+        "summary": "Health check e info da BD",
+        "responses": {
+          "200": {
+            "description": "API operacional",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string"
+                },
+                "api": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                },
+                "serverTime": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "description": "Verifica se a API esta operacional e retorna informacao da base de dados (nome, hora do servidor). Usar para diagnostico de conectividade."
+      }
+    },
+    "/health/tables": {
+      "get": {
+        "tags": [
+          "Sistema"
+        ],
+        "operationId": "GetTables",
+        "summary": "Listar tabelas da BD",
+        "responses": {
+          "200": {
+            "description": "Lista de tabelas",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer"
+                },
+                "tabelas": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "tabela": {
+                        "type": "string"
+                      },
+                      "registos": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todas as tabelas da base de dados Primavera V10 com o numero de registos em cada uma. Util para explorar a estrutura de dados disponivel."
+      }
+    },
+    "/health/tables/{nome}/columns": {
+      "get": {
+        "tags": [
+          "Sistema"
+        ],
+        "operationId": "GetTableColumns",
+        "summary": "Colunas de uma tabela",
+        "parameters": [
+          {
+            "name": "nome",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Nome da tabela",
+            "x-ms-summary": "Nome da tabela"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de colunas",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "tabela": {
+                  "type": "string"
+                },
+                "colunas": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "coluna": {
+                        "type": "string"
+                      },
+                      "tipo": {
+                        "type": "string"
+                      },
+                      "tamanho": {
+                        "type": "integer"
+                      },
+                      "nulo": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista as colunas de uma tabela especifica com tipo de dados, tamanho e se aceita nulos. Util para construir queries SQL no endpoint /query."
+      }
+    },
+    "/base/familias": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetFamilias",
+        "summary": "Familias de artigos",
+        "responses": {
+          "200": {
+            "description": "Array de familias",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Familia": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todas as familias de artigos (categorias principais de produtos). Cada familia tem um codigo e descricao. Usar para filtrar artigos por familia."
+      }
+    },
+    "/base/subfamilias": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetSubFamilias",
+        "summary": "Subfamilias de artigos",
+        "parameters": [
+          {
+            "name": "familia",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por familia",
+            "x-ms-summary": "Familia"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array de subfamilias",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "SubFamilia": {
+                    "type": "string"
+                  },
+                  "Familia": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista subfamilias de artigos (subcategorias). Pode filtrar por familia para ver apenas as subfamilias de uma familia especifica."
+      }
+    },
+    "/base/marcas": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetMarcas",
+        "summary": "Marcas",
+        "responses": {
+          "200": {
+            "description": "Array de marcas",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Marca": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todas as marcas de artigos registadas no sistema. Cada marca tem um codigo e descricao."
+      }
+    },
+    "/base/modelos": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetModelos",
+        "summary": "Modelos",
+        "parameters": [
+          {
+            "name": "marca",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por marca",
+            "x-ms-summary": "Marca"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array de modelos",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Modelo": {
+                    "type": "string"
+                  },
+                  "Marca": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista modelos de artigos. Pode filtrar por marca para ver apenas os modelos de uma marca especifica."
+      }
+    },
+    "/base/armazens": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetArmazens",
+        "summary": "Armazens",
+        "responses": {
+          "200": {
+            "description": "Array de armazens",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Armazem": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  },
+                  "Morada": {
+                    "type": "string"
+                  },
+                  "Localidade": {
+                    "type": "string"
+                  },
+                  "CodPostal": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todos os armazens da empresa com morada e localidade. Os codigos de armazem sao usados como filtro nos endpoints de stock."
+      }
+    },
+    "/base/armazens/{id}": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetArmazemById",
+        "summary": "Detalhe de um armazem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do armazem",
+            "x-ms-summary": "Armazem"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Armazem encontrado"
+          },
+          "404": {
+            "description": "Nao encontrado"
+          }
+        },
+        "description": "Retorna todos os detalhes de um armazem especifico pelo seu codigo."
+      }
+    },
+    "/base/unidades": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetUnidades",
+        "summary": "Unidades de medida",
+        "responses": {
+          "200": {
+            "description": "Array de unidades",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Unidade": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todas as unidades de medida registadas (UN, KG, M, M2, M3, LT, etc.). As unidades sao usadas nos artigos e linhas de documentos."
+      }
+    },
+    "/base/vendedores": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetVendedores",
+        "summary": "Vendedores",
+        "responses": {
+          "200": {
+            "description": "Array de vendedores",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Vendedor": {
+                    "type": "string"
+                  },
+                  "Nome": {
+                    "type": "string"
+                  },
+                  "Comissao": {
+                    "type": "number"
+                  },
+                  "Email": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todos os vendedores da empresa com nome, comissao e email. Os codigos de vendedor sao usados como filtro nas vendas."
+      }
+    },
+    "/base/vendedores/{id}": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetVendedorById",
+        "summary": "Detalhe de um vendedor",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do vendedor",
+            "x-ms-summary": "Vendedor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vendedor encontrado"
+          },
+          "404": {
+            "description": "Nao encontrado"
+          }
+        },
+        "description": "Retorna todos os detalhes de um vendedor especifico pelo seu codigo, incluindo morada, telefone e comissao."
+      }
+    },
+    "/base/vendedores/{id}/vendas": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetVendedorVendas",
+        "summary": "Resumo de vendas de um vendedor",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do vendedor",
+            "x-ms-summary": "Vendedor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumo vendas",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "Vendedor": {
+                  "type": "string"
+                },
+                "Nome": {
+                  "type": "string"
+                },
+                "totalDocs": {
+                  "type": "integer"
+                },
+                "totalVendas": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retorna o resumo de vendas de um vendedor: total de documentos e valor total de vendas. Calcula a partir das linhas de documentos de venda."
+      }
+    },
+    "/base/zonas": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetZonas",
+        "summary": "Zonas geograficas",
+        "responses": {
+          "200": {
+            "description": "Array de zonas",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Zona": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todas as zonas geograficas configuradas. As zonas sao usadas na classificacao de clientes e documentos de venda."
+      }
+    },
+    "/base/condpag": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetCondPag",
+        "summary": "Condicoes de pagamento",
+        "responses": {
+          "200": {
+            "description": "Array de condicoes",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "CondPag": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  },
+                  "Dias": {
+                    "type": "integer"
+                  },
+                  "Desconto": {
+                    "type": "number"
+                  },
+                  "TipoCondicao": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todas as condicoes de pagamento: dias, desconto e tipo de condicao (pronto pagamento, 30 dias, etc.)."
+      }
+    },
+    "/base/moedas": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetMoedas",
+        "summary": "Moedas",
+        "responses": {
+          "200": {
+            "description": "Array de moedas",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Moeda": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  },
+                  "TaxaCambio": {
+                    "type": "number"
+                  },
+                  "Venda": {
+                    "type": "number"
+                  },
+                  "IDIso": {
+                    "type": "string"
+                  },
+                  "Simbolo": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todas as moedas configuradas com taxa de cambio, codigo ISO e simbolo. A moeda principal e EUR."
+      }
+    },
+    "/base/iva": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetIva",
+        "summary": "Tabela de IVA",
+        "responses": {
+          "200": {
+            "description": "Array de taxas IVA",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Iva": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  },
+                  "Taxa": {
+                    "type": "number"
+                  },
+                  "TipoTaxa": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todas as taxas de IVA configuradas no sistema com codigo, descricao, taxa percentual e tipo de taxa."
+      }
+    },
+    "/base/series": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetSeries",
+        "summary": "Series de documentos de venda",
+        "parameters": [
+          {
+            "name": "tipoDoc",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por tipo documento (FA, NC, etc.)",
+            "x-ms-summary": "Tipo Documento"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array de series",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "TipoDoc": {
+                    "type": "string"
+                  },
+                  "Serie": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  },
+                  "Numerador": {
+                    "type": "integer"
+                  },
+                  "SerieInactiva": {
+                    "type": "boolean"
+                  },
+                  "SeriePorDefeito": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista as series de documentos de venda (numeracao). Pode filtrar por tipo de documento (FA, NC, EC, etc.). Mostra numerador actual, datas de validade e se esta activa."
+      }
+    },
+    "/base/tiposdoc": {
+      "get": {
+        "tags": [
+          "Base"
+        ],
+        "operationId": "GetTiposDoc",
+        "summary": "Tipos de documento de venda",
+        "responses": {
+          "200": {
+            "description": "Array de tipos",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "Documento": {
+                    "type": "string"
+                  },
+                  "Descricao": {
+                    "type": "string"
+                  },
+                  "MovStock": {
+                    "type": "boolean"
+                  },
+                  "MovCC": {
+                    "type": "boolean"
+                  },
+                  "MovContab": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todos os tipos de documentos de venda configurados (FA-Factura, NC-Nota Credito, EC-Encomenda, etc.) com indicacao se movimentam stock, conta corrente e contabilidade."
+      }
+    },
+    "/clientes": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "operationId": "GetClientes",
+        "summary": "Listar clientes",
+        "description": "Lista todos os clientes com paginacao. Pesquisa generica por codigo de cliente, nome, NIF (NumContrib), email ou telefone. Retorna dados principais: nome, morada, contactos, condicoes comerciais, vendedor e zona.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "description": "Pesquisa generica",
+            "x-ms-summary": "Pesquisa"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "description": "Pagina",
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "description": "Registos por pagina (max 200)",
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Cliente": {
+                        "type": "string"
+                      },
+                      "Nome": {
+                        "type": "string"
+                      },
+                      "NumContrib": {
+                        "type": "string"
+                      },
+                      "Morada": {
+                        "type": "string"
+                      },
+                      "Localidade": {
+                        "type": "string"
+                      },
+                      "CodPostal": {
+                        "type": "string"
+                      },
+                      "Telefone": {
+                        "type": "string"
+                      },
+                      "Email": {
+                        "type": "string"
+                      },
+                      "Pais": {
+                        "type": "string"
+                      },
+                      "CondPag": {
+                        "type": "string"
+                      },
+                      "Moeda": {
+                        "type": "string"
+                      },
+                      "Vendedor": {
+                        "type": "string"
+                      },
+                      "Zona": {
+                        "type": "string"
+                      },
+                      "Desconto": {
+                        "type": "number"
+                      },
+                      "TotalDeb": {
+                        "type": "number"
+                      },
+                      "LimiteCred": {
+                        "type": "number"
+                      },
+                      "Situacao": {
+                        "type": "string"
+                      },
+                      "DataCriacao": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clientes/{id}": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "operationId": "GetClienteById",
+        "summary": "Detalhes do cliente",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do cliente",
+            "x-ms-summary": "Cliente"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cliente encontrado"
+          },
+          "404": {
+            "description": "Nao encontrado"
+          }
+        },
+        "description": "Retorna todos os campos de um cliente especifico pelo seu codigo. Inclui toda a informacao comercial, fiscal, morada e contactos."
+      }
+    },
+    "/clientes/{id}/documentos": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "operationId": "GetClienteDocumentos",
+        "summary": "Documentos de venda do cliente",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do cliente",
+            "x-ms-summary": "Cliente"
+          },
+          {
+            "name": "tipoDoc",
+            "in": "query",
+            "type": "string",
+            "description": "Tipo doc (FA, NC, EC, GR, GT)",
+            "x-ms-summary": "Tipo Doc"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "description": "Data inicio (YYYY-MM-DD)",
+            "x-ms-summary": "Data Inicio"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "description": "Data fim (YYYY-MM-DD)",
+            "x-ms-summary": "Data Fim"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada de documentos",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Id": {
+                        "type": "string"
+                      },
+                      "TipoDoc": {
+                        "type": "string"
+                      },
+                      "Serie": {
+                        "type": "string"
+                      },
+                      "NumDoc": {
+                        "type": "integer"
+                      },
+                      "Data": {
+                        "type": "string"
+                      },
+                      "Nome": {
+                        "type": "string"
+                      },
+                      "TotalMerc": {
+                        "type": "number"
+                      },
+                      "TotalDesc": {
+                        "type": "number"
+                      },
+                      "TotalIva": {
+                        "type": "number"
+                      },
+                      "TotalDocumento": {
+                        "type": "number"
+                      },
+                      "Moeda": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista documentos de venda emitidos a um cliente especifico. Filtrar por tipo de documento (FA, NC, EC, GR) e intervalo de datas. Retorna cabecalho com totais."
+      }
+    },
+    "/clientes/{id}/saldo": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "operationId": "GetClienteSaldo",
+        "summary": "Saldo conta corrente do cliente",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do cliente",
+            "x-ms-summary": "Cliente"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saldo",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "totalPendente": {
+                  "type": "number"
+                },
+                "numDocumentos": {
+                  "type": "integer"
+                },
+                "vencimentoMaisAntigo": {
+                  "type": "string"
+                },
+                "totalVencido": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retorna o saldo de conta corrente de um cliente: total pendente, total vencido, numero de documentos pendentes e data do vencimento mais antigo."
+      }
+    },
+    "/clientes/{id}/pendentes": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "operationId": "GetClientePendentes",
+        "summary": "Documentos pendentes do cliente",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do cliente",
+            "x-ms-summary": "Cliente"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pendentes",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "TipoDoc": {
+                        "type": "string"
+                      },
+                      "Serie": {
+                        "type": "string"
+                      },
+                      "NumDocInt": {
+                        "type": "integer"
+                      },
+                      "DataDoc": {
+                        "type": "string"
+                      },
+                      "DataVenc": {
+                        "type": "string"
+                      },
+                      "Moeda": {
+                        "type": "string"
+                      },
+                      "ValorTotal": {
+                        "type": "number"
+                      },
+                      "ValorPendente": {
+                        "type": "number"
+                      },
+                      "diasAtraso": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista detalhada de todos os documentos pendentes (por pagar) de um cliente, com tipo de documento, valor pendente, data de vencimento e dias de atraso."
+      }
+    },
+    "/fornecedores": {
+      "get": {
+        "tags": [
+          "Fornecedores"
+        ],
+        "operationId": "GetFornecedores",
+        "summary": "Listar fornecedores",
+        "description": "Lista todos os fornecedores com paginacao. Pesquisa generica por codigo, nome, NIF ou email. Retorna dados principais: nome, morada, contactos e condicoes comerciais.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "description": "Pesquisa generica",
+            "x-ms-summary": "Pesquisa"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Fornecedor": {
+                        "type": "string"
+                      },
+                      "Nome": {
+                        "type": "string"
+                      },
+                      "NumContrib": {
+                        "type": "string"
+                      },
+                      "Morada": {
+                        "type": "string"
+                      },
+                      "Localidade": {
+                        "type": "string"
+                      },
+                      "CodPostal": {
+                        "type": "string"
+                      },
+                      "Telefone": {
+                        "type": "string"
+                      },
+                      "Email": {
+                        "type": "string"
+                      },
+                      "Pais": {
+                        "type": "string"
+                      },
+                      "CondPag": {
+                        "type": "string"
+                      },
+                      "Moeda": {
+                        "type": "string"
+                      },
+                      "TotalDeb": {
+                        "type": "number"
+                      },
+                      "LimiteCred": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fornecedores/{id}": {
+      "get": {
+        "tags": [
+          "Fornecedores"
+        ],
+        "operationId": "GetFornecedorById",
+        "summary": "Detalhes do fornecedor",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do fornecedor",
+            "x-ms-summary": "Fornecedor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fornecedor encontrado"
+          },
+          "404": {
+            "description": "Nao encontrado"
+          }
+        },
+        "description": "Retorna todos os campos de um fornecedor especifico pelo seu codigo. Inclui toda a informacao comercial, fiscal, morada e contactos."
+      }
+    },
+    "/fornecedores/{id}/documentos": {
+      "get": {
+        "tags": [
+          "Fornecedores"
+        ],
+        "operationId": "GetFornecedorDocumentos",
+        "summary": "Documentos de compra do fornecedor",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do fornecedor",
+            "x-ms-summary": "Fornecedor"
+          },
+          {
+            "name": "tipoDoc",
+            "in": "query",
+            "type": "string",
+            "description": "Tipo doc (VFA, ECF, VNC)",
+            "x-ms-summary": "Tipo Doc"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "description": "Data inicio (YYYY-MM-DD)",
+            "x-ms-summary": "Data Inicio"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "description": "Data fim (YYYY-MM-DD)",
+            "x-ms-summary": "Data Fim"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Id": {
+                        "type": "string"
+                      },
+                      "TipoDoc": {
+                        "type": "string"
+                      },
+                      "Serie": {
+                        "type": "string"
+                      },
+                      "NumDoc": {
+                        "type": "integer"
+                      },
+                      "DataDoc": {
+                        "type": "string"
+                      },
+                      "NumDocExterno": {
+                        "type": "string"
+                      },
+                      "TotalDocumento": {
+                        "type": "number"
+                      },
+                      "Moeda": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista documentos de compra de um fornecedor especifico. Filtrar por tipo de documento (VFA, ECF, VNC) e intervalo de datas. Retorna cabecalho com totais."
+      }
+    },
+    "/fornecedores/{id}/saldo": {
+      "get": {
+        "tags": [
+          "Fornecedores"
+        ],
+        "operationId": "GetFornecedorSaldo",
+        "summary": "Saldo conta corrente do fornecedor",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do fornecedor",
+            "x-ms-summary": "Fornecedor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saldo",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "totalPendente": {
+                  "type": "number"
+                },
+                "numDocumentos": {
+                  "type": "integer"
+                },
+                "vencimentoMaisAntigo": {
+                  "type": "string"
+                },
+                "totalVencido": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retorna o saldo de conta corrente de um fornecedor: total pendente (que devemos), total vencido, numero de documentos pendentes e data do vencimento mais antigo."
+      }
+    },
+    "/fornecedores/{id}/artigos": {
+      "get": {
+        "tags": [
+          "Fornecedores"
+        ],
+        "operationId": "GetFornecedorArtigos",
+        "summary": "Artigos fornecidos",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do fornecedor",
+            "x-ms-summary": "Fornecedor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de artigos",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Artigo": {
+                        "type": "string"
+                      },
+                      "Descricao": {
+                        "type": "string"
+                      },
+                      "RefFornecedor": {
+                        "type": "string"
+                      },
+                      "UnidadeCompra": {
+                        "type": "string"
+                      },
+                      "PrCustoUltimo": {
+                        "type": "number"
+                      },
+                      "Desconto": {
+                        "type": "number"
+                      },
+                      "PrazoEntrega": {
+                        "type": "integer"
+                      },
+                      "Moeda": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todos os artigos que um fornecedor fornece, com referencia do fornecedor, preco de custo ultimo, desconto comercial, prazo de entrega e unidade de compra."
+      }
+    },
+    "/artigos": {
+      "get": {
+        "tags": [
+          "Artigos"
+        ],
+        "operationId": "GetArtigos",
+        "summary": "Listar artigos",
+        "description": "Lista artigos/produtos com paginacao. Pesquisa por codigo, descricao ou codigo de barras. Filtrar por familia de artigo ou apenas artigos com stock positivo. Retorna precos de custo, stock e armazem.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "description": "Pesquisa generica",
+            "x-ms-summary": "Pesquisa"
+          },
+          {
+            "name": "familia",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por familia",
+            "x-ms-summary": "Familia"
+          },
+          {
+            "name": "comStock",
+            "in": "query",
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "true = apenas com stock",
+            "x-ms-summary": "Com Stock"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Artigo": {
+                        "type": "string"
+                      },
+                      "Descricao": {
+                        "type": "string"
+                      },
+                      "Familia": {
+                        "type": "string"
+                      },
+                      "SubFamilia": {
+                        "type": "string"
+                      },
+                      "Marca": {
+                        "type": "string"
+                      },
+                      "Modelo": {
+                        "type": "string"
+                      },
+                      "UnidadeBase": {
+                        "type": "string"
+                      },
+                      "PCMedio": {
+                        "type": "number"
+                      },
+                      "PCUltimo": {
+                        "type": "number"
+                      },
+                      "PCPadrao": {
+                        "type": "number"
+                      },
+                      "STKActual": {
+                        "type": "number"
+                      },
+                      "STKMinimo": {
+                        "type": "number"
+                      },
+                      "STKMaximo": {
+                        "type": "number"
+                      },
+                      "Armazem": {
+                        "type": "string"
+                      },
+                      "MovStock": {
+                        "type": "string"
+                      },
+                      "ArtigoAnulado": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/artigos/{id}": {
+      "get": {
+        "tags": [
+          "Artigos"
+        ],
+        "operationId": "GetArtigoById",
+        "summary": "Detalhes do artigo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do artigo",
+            "x-ms-summary": "Artigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artigo encontrado"
+          },
+          "404": {
+            "description": "Nao encontrado"
+          }
+        },
+        "description": "Retorna todos os campos de um artigo especifico pelo seu codigo. Inclui toda a informacao tecnica, comercial, precos e stock."
+      }
+    },
+    "/artigos/{id}/precos": {
+      "get": {
+        "tags": [
+          "Artigos"
+        ],
+        "operationId": "GetArtigoPrecos",
+        "summary": "Precos do artigo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do artigo",
+            "x-ms-summary": "Artigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Precos",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "Artigo": {
+                  "type": "string"
+                },
+                "Descricao": {
+                  "type": "string"
+                },
+                "PCMedio": {
+                  "type": "number"
+                },
+                "PCUltimo": {
+                  "type": "number"
+                },
+                "PCPadrao": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retorna os precos de custo de um artigo: PCMedio (preco custo medio), PCUltimo (preco custo ultimo) e PCPadrao (preco custo padrao)."
+      }
+    },
+    "/artigos/{id}/fornecedores": {
+      "get": {
+        "tags": [
+          "Artigos"
+        ],
+        "operationId": "GetArtigoFornecedores",
+        "summary": "Fornecedores do artigo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do artigo",
+            "x-ms-summary": "Artigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de fornecedores",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Fornecedor": {
+                        "type": "string"
+                      },
+                      "Nome": {
+                        "type": "string"
+                      },
+                      "RefFornecedor": {
+                        "type": "string"
+                      },
+                      "UnidadeCompra": {
+                        "type": "string"
+                      },
+                      "PrCustoUltimo": {
+                        "type": "number"
+                      },
+                      "Desconto": {
+                        "type": "number"
+                      },
+                      "PrazoEntrega": {
+                        "type": "integer"
+                      },
+                      "Moeda": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista todos os fornecedores que vendem este artigo, com preco de custo, desconto, prazo de entrega e referencia do fornecedor. Ordenado por preco."
+      }
+    },
+    "/artigos/{id}/movimentos": {
+      "get": {
+        "tags": [
+          "Artigos"
+        ],
+        "operationId": "GetArtigoMovimentos",
+        "summary": "Movimentos de stock do artigo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "Codigo do artigo",
+            "x-ms-summary": "Artigo"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Movimentos",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Data": {
+                        "type": "string"
+                      },
+                      "TipoMovimento": {
+                        "type": "string"
+                      },
+                      "Quantidade": {
+                        "type": "number"
+                      },
+                      "Stock_Anterior": {
+                        "type": "number"
+                      },
+                      "Stock_Actual": {
+                        "type": "number"
+                      },
+                      "Armazem": {
+                        "type": "string"
+                      },
+                      "NumRegisto": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Historico de movimentos de stock de um artigo: entradas, saidas e transferencias com quantidades, stock anterior e actual. Ordenado do mais recente."
+      }
+    },
+    "/vendas/documentos": {
+      "get": {
+        "tags": [
+          "Vendas"
+        ],
+        "operationId": "GetVendasDocumentos",
+        "summary": "Listar documentos de venda",
+        "description": "Lista documentos de venda com filtros genericos: tipo documento (FA, FR, NC, EC, GR, GT), cliente, artigo, vendedor, zona, serie e intervalo de datas. Filtros por artigo e vendedor usam as linhas do documento.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "description": "Pesquisa por nome, codigo ou num doc",
+            "x-ms-summary": "Pesquisa"
+          },
+          {
+            "name": "tipoDoc",
+            "in": "query",
+            "type": "string",
+            "description": "FA, FR, NC, EC, GR, GT",
+            "x-ms-summary": "Tipo Doc"
+          },
+          {
+            "name": "cliente",
+            "in": "query",
+            "type": "string",
+            "description": "Codigo do cliente",
+            "x-ms-summary": "Cliente"
+          },
+          {
+            "name": "artigo",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por artigo (via linhas)",
+            "x-ms-summary": "Artigo"
+          },
+          {
+            "name": "vendedor",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por vendedor (via linhas)",
+            "x-ms-summary": "Vendedor"
+          },
+          {
+            "name": "zona",
+            "in": "query",
+            "type": "string",
+            "description": "Zona geografica",
+            "x-ms-summary": "Zona"
+          },
+          {
+            "name": "serie",
+            "in": "query",
+            "type": "string",
+            "description": "Serie do documento",
+            "x-ms-summary": "Serie"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "description": "Data inicio (YYYY-MM-DD)",
+            "x-ms-summary": "Data Inicio"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "description": "Data fim (YYYY-MM-DD)",
+            "x-ms-summary": "Data Fim"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Id": {
+                        "type": "string"
+                      },
+                      "TipoDoc": {
+                        "type": "string"
+                      },
+                      "Serie": {
+                        "type": "string"
+                      },
+                      "NumDoc": {
+                        "type": "integer"
+                      },
+                      "Entidade": {
+                        "type": "string"
+                      },
+                      "Nome": {
+                        "type": "string"
+                      },
+                      "Data": {
+                        "type": "string"
+                      },
+                      "DataVencimento": {
+                        "type": "string"
+                      },
+                      "Moeda": {
+                        "type": "string"
+                      },
+                      "TotalMerc": {
+                        "type": "number"
+                      },
+                      "TotalDesc": {
+                        "type": "number"
+                      },
+                      "TotalIva": {
+                        "type": "number"
+                      },
+                      "TotalDocumento": {
+                        "type": "number"
+                      },
+                      "Zona": {
+                        "type": "string"
+                      },
+                      "CondPag": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vendas/documentos/{id}": {
+      "get": {
+        "tags": [
+          "Vendas"
+        ],
+        "operationId": "GetVendaDocumentoById",
+        "summary": "Detalhe documento de venda com linhas",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "ID do documento (UUID)",
+            "x-ms-summary": "ID Documento"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Documento com linhas",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "cabecalho": {
+                  "type": "object"
+                },
+                "linhas": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "NumLinha": {
+                        "type": "integer"
+                      },
+                      "Artigo": {
+                        "type": "string"
+                      },
+                      "Descricao": {
+                        "type": "string"
+                      },
+                      "Quantidade": {
+                        "type": "number"
+                      },
+                      "Unidade": {
+                        "type": "string"
+                      },
+                      "PrecUnit": {
+                        "type": "number"
+                      },
+                      "Desconto1": {
+                        "type": "number"
+                      },
+                      "PrecoLiquido": {
+                        "type": "number"
+                      },
+                      "TotalIliquido": {
+                        "type": "number"
+                      },
+                      "TaxaIva": {
+                        "type": "number"
+                      },
+                      "TotalIva": {
+                        "type": "number"
+                      },
+                      "Armazem": {
+                        "type": "string"
+                      },
+                      "Vendedor": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Documento nao encontrado"
+          }
+        },
+        "description": "Retorna o cabecalho completo e todas as linhas de um documento de venda especifico. Cada linha tem artigo, quantidade, preco, descontos, IVA, armazem e vendedor."
+      }
+    },
+    "/vendas/resumo": {
+      "get": {
+        "tags": [
+          "Vendas"
+        ],
+        "operationId": "GetVendasResumo",
+        "summary": "Totais de vendas (facturacao)",
+        "description": "Resumo de facturacao: total facturado, total de notas de credito (abatimentos), numero de facturas e abatimentos, numero de clientes e ticket medio. Exclui documentos anulados. Filtrar por periodo.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "description": "Data inicio (YYYY-MM-DD)",
+            "x-ms-summary": "Data Inicio"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "description": "Data fim (YYYY-MM-DD)",
+            "x-ms-summary": "Data Fim"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumo",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "totalFacturado": {
+                  "type": "number"
+                },
+                "totalAbatimentos": {
+                  "type": "number"
+                },
+                "numFacturas": {
+                  "type": "integer"
+                },
+                "numAbatimentos": {
+                  "type": "integer"
+                },
+                "numClientes": {
+                  "type": "integer"
+                },
+                "ticketMedio": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vendas/top": {
+      "get": {
+        "tags": [
+          "Vendas"
+        ],
+        "operationId": "GetVendasTop",
+        "summary": "Rankings vendas (top clientes, artigos, vendedores)",
+        "parameters": [
+          {
+            "name": "por",
+            "in": "query",
+            "type": "string",
+            "enum": [
+              "cliente",
+              "artigo",
+              "vendedor"
+            ],
+            "default": "cliente",
+            "description": "Agrupar por",
+            "x-ms-summary": "Agrupar Por"
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "type": "integer",
+            "default": 10,
+            "description": "Num resultados (max 100)",
+            "x-ms-summary": "Top N"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "description": "Data inicio (YYYY-MM-DD)",
+            "x-ms-summary": "Data Inicio"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "description": "Data fim (YYYY-MM-DD)",
+            "x-ms-summary": "Data Fim"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranking",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "por": {
+                  "type": "string"
+                },
+                "top": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "codigo": {
+                        "type": "string"
+                      },
+                      "nome": {
+                        "type": "string"
+                      },
+                      "total": {
+                        "type": "number"
+                      },
+                      "numDocumentos": {
+                        "type": "integer"
+                      },
+                      "quantidade": {
+                        "type": "number"
+                      },
+                      "numClientes": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Rankings de vendas por volume. Agrupar por cliente (total documento), artigo (total iliquido + quantidade) ou vendedor (total iliquido + num clientes). Filtrar por periodo e numero de resultados (max 100)."
+      }
+    },
+    "/compras/documentos": {
+      "get": {
+        "tags": [
+          "Compras"
+        ],
+        "operationId": "GetComprasDocumentos",
+        "summary": "Listar documentos de compra",
+        "description": "Lista documentos de compra com filtros genericos: tipo documento (VFA, ECF, VNC), fornecedor, artigo, serie e intervalo de datas. Filtro por artigo usa as linhas do documento.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "description": "Pesquisa por nome, codigo ou num doc",
+            "x-ms-summary": "Pesquisa"
+          },
+          {
+            "name": "tipoDoc",
+            "in": "query",
+            "type": "string",
+            "description": "VFA, ECF, VNC",
+            "x-ms-summary": "Tipo Doc"
+          },
+          {
+            "name": "fornecedor",
+            "in": "query",
+            "type": "string",
+            "description": "Codigo do fornecedor",
+            "x-ms-summary": "Fornecedor"
+          },
+          {
+            "name": "artigo",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por artigo (via linhas)",
+            "x-ms-summary": "Artigo"
+          },
+          {
+            "name": "serie",
+            "in": "query",
+            "type": "string",
+            "description": "Serie do documento",
+            "x-ms-summary": "Serie"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "description": "Data inicio (YYYY-MM-DD)",
+            "x-ms-summary": "Data Inicio"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "description": "Data fim (YYYY-MM-DD)",
+            "x-ms-summary": "Data Fim"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Id": {
+                        "type": "string"
+                      },
+                      "TipoDoc": {
+                        "type": "string"
+                      },
+                      "Serie": {
+                        "type": "string"
+                      },
+                      "NumDoc": {
+                        "type": "integer"
+                      },
+                      "Entidade": {
+                        "type": "string"
+                      },
+                      "Nome": {
+                        "type": "string"
+                      },
+                      "DataDoc": {
+                        "type": "string"
+                      },
+                      "NumDocExterno": {
+                        "type": "string"
+                      },
+                      "Moeda": {
+                        "type": "string"
+                      },
+                      "TotalMerc": {
+                        "type": "number"
+                      },
+                      "TotalDesc": {
+                        "type": "number"
+                      },
+                      "TotalIva": {
+                        "type": "number"
+                      },
+                      "TotalDocumento": {
+                        "type": "number"
+                      },
+                      "CondPag": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/compras/documentos/{id}": {
+      "get": {
+        "tags": [
+          "Compras"
+        ],
+        "operationId": "GetCompraDocumentoById",
+        "summary": "Detalhe documento de compra com linhas",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "ID do documento (UUID)",
+            "x-ms-summary": "ID Documento"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Documento com linhas",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "cabecalho": {
+                  "type": "object"
+                },
+                "linhas": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "NumLinha": {
+                        "type": "integer"
+                      },
+                      "Artigo": {
+                        "type": "string"
+                      },
+                      "Descricao": {
+                        "type": "string"
+                      },
+                      "Quantidade": {
+                        "type": "number"
+                      },
+                      "Unidade": {
+                        "type": "string"
+                      },
+                      "PrecUnit": {
+                        "type": "number"
+                      },
+                      "Desconto1": {
+                        "type": "number"
+                      },
+                      "PrecoLiquido": {
+                        "type": "number"
+                      },
+                      "TotalIliquido": {
+                        "type": "number"
+                      },
+                      "TaxaIva": {
+                        "type": "number"
+                      },
+                      "TotalIva": {
+                        "type": "number"
+                      },
+                      "Armazem": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Documento nao encontrado"
+          }
+        },
+        "description": "Retorna o cabecalho completo e todas as linhas de um documento de compra especifico. Cada linha tem artigo, quantidade, preco, descontos, IVA e armazem."
+      }
+    },
+    "/compras/resumo": {
+      "get": {
+        "tags": [
+          "Compras"
+        ],
+        "operationId": "GetComprasResumo",
+        "summary": "Totais de compras",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "description": "Data inicio (YYYY-MM-DD)",
+            "x-ms-summary": "Data Inicio"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "description": "Data fim (YYYY-MM-DD)",
+            "x-ms-summary": "Data Fim"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumo",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "totalCompras": {
+                  "type": "number"
+                },
+                "numDocumentos": {
+                  "type": "integer"
+                },
+                "numFornecedores": {
+                  "type": "integer"
+                },
+                "valorMedio": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "description": "Resumo de compras: total de compras, numero de documentos, numero de fornecedores e valor medio por documento. Filtrar por periodo."
+      }
+    },
+    "/compras/top": {
+      "get": {
+        "tags": [
+          "Compras"
+        ],
+        "operationId": "GetComprasTop",
+        "summary": "Rankings compras (top fornecedores, artigos)",
+        "parameters": [
+          {
+            "name": "por",
+            "in": "query",
+            "type": "string",
+            "enum": [
+              "fornecedor",
+              "artigo"
+            ],
+            "default": "fornecedor",
+            "description": "Agrupar por",
+            "x-ms-summary": "Agrupar Por"
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "type": "integer",
+            "default": 10,
+            "description": "Num resultados (max 100)",
+            "x-ms-summary": "Top N"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "description": "Data inicio (YYYY-MM-DD)",
+            "x-ms-summary": "Data Inicio"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "description": "Data fim (YYYY-MM-DD)",
+            "x-ms-summary": "Data Fim"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranking",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "por": {
+                  "type": "string"
+                },
+                "top": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "codigo": {
+                        "type": "string"
+                      },
+                      "nome": {
+                        "type": "string"
+                      },
+                      "total": {
+                        "type": "number"
+                      },
+                      "numDocumentos": {
+                        "type": "integer"
+                      },
+                      "quantidade": {
+                        "type": "number"
+                      },
+                      "numFornecedores": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Rankings de compras por volume. Agrupar por fornecedor (total documento) ou artigo (total iliquido + quantidade). Filtrar por periodo e numero de resultados (max 100)."
+      }
+    },
+    "/stock/actual": {
+      "get": {
+        "tags": [
+          "Stock"
+        ],
+        "operationId": "GetStockActual",
+        "summary": "Stock actual por artigo",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "description": "Pesquisa por codigo ou descricao",
+            "x-ms-summary": "Pesquisa"
+          },
+          {
+            "name": "armazem",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por armazem",
+            "x-ms-summary": "Armazem"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Artigo": {
+                        "type": "string"
+                      },
+                      "Descricao": {
+                        "type": "string"
+                      },
+                      "Familia": {
+                        "type": "string"
+                      },
+                      "Armazem": {
+                        "type": "string"
+                      },
+                      "STKActual": {
+                        "type": "number"
+                      },
+                      "STKMinimo": {
+                        "type": "number"
+                      },
+                      "STKMaximo": {
+                        "type": "number"
+                      },
+                      "PCMedio": {
+                        "type": "number"
+                      },
+                      "PCUltimo": {
+                        "type": "number"
+                      },
+                      "valorStock": {
+                        "type": "number"
+                      },
+                      "UnidadeBase": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista artigos com stock actual positivo (MovStock=S). Mostra quantidades (actual, minimo, maximo), precos de custo e valor de stock calculado (STKActual * PCMedio). Filtrar por pesquisa e armazem."
+      }
+    },
+    "/stock/alertas": {
+      "get": {
+        "tags": [
+          "Stock"
+        ],
+        "operationId": "GetStockAlertas",
+        "summary": "Alertas de stock (sem stock, abaixo minimo, acima maximo)",
+        "responses": {
+          "200": {
+            "description": "Lista de alertas",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Artigo": {
+                        "type": "string"
+                      },
+                      "Descricao": {
+                        "type": "string"
+                      },
+                      "STKActual": {
+                        "type": "number"
+                      },
+                      "STKMinimo": {
+                        "type": "number"
+                      },
+                      "STKMaximo": {
+                        "type": "number"
+                      },
+                      "Armazem": {
+                        "type": "string"
+                      },
+                      "alerta": {
+                        "type": "string"
+                      },
+                      "deficit": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista artigos com alertas de stock: sem stock (STKActual <= 0), abaixo do minimo ou acima do maximo. Ordenado por severidade: sem_stock > abaixo_minimo > acima_maximo. Inclui deficit calculado."
+      }
+    },
+    "/stock/movimentos": {
+      "get": {
+        "tags": [
+          "Stock"
+        ],
+        "operationId": "GetStockMovimentos",
+        "summary": "Movimentos de stock",
+        "parameters": [
+          {
+            "name": "artigo",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por artigo",
+            "x-ms-summary": "Artigo"
+          },
+          {
+            "name": "armazem",
+            "in": "query",
+            "type": "string",
+            "description": "Filtrar por armazem",
+            "x-ms-summary": "Armazem"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "description": "Data inicio (YYYY-MM-DD)",
+            "x-ms-summary": "Data Inicio"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "description": "Data fim (YYYY-MM-DD)",
+            "x-ms-summary": "Data Fim"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Data": {
+                        "type": "string"
+                      },
+                      "TipoMovimento": {
+                        "type": "string"
+                      },
+                      "Artigo": {
+                        "type": "string"
+                      },
+                      "Armazem": {
+                        "type": "string"
+                      },
+                      "Quantidade": {
+                        "type": "number"
+                      },
+                      "Stock_Anterior": {
+                        "type": "number"
+                      },
+                      "Stock_Actual": {
+                        "type": "number"
+                      },
+                      "NumRegisto": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Historico de movimentos de stock: entradas, saidas e transferencias. Filtrar por artigo, armazem e intervalo de datas. Mostra quantidade, stock anterior e actual."
+      }
+    },
+    "/stock/resumo": {
+      "get": {
+        "tags": [
+          "Stock"
+        ],
+        "operationId": "GetStockResumo",
+        "summary": "Totais de inventario",
+        "responses": {
+          "200": {
+            "description": "Resumo",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "totalArtigosComStock": {
+                  "type": "integer"
+                },
+                "totalUnidades": {
+                  "type": "number"
+                },
+                "valorTotalPCMedio": {
+                  "type": "number"
+                },
+                "valorTotalPCUltimo": {
+                  "type": "number"
+                },
+                "artigosAbaixoMinimo": {
+                  "type": "integer"
+                },
+                "artigosSemStock": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "description": "Resumo geral de inventario: total de artigos com stock, total de unidades, valor total a PCMedio e PCUltimo, artigos abaixo do minimo e artigos sem stock."
+      }
+    },
+    "/financeiro/contas": {
+      "get": {
+        "tags": [
+          "Financeiro"
+        ],
+        "operationId": "GetFinanceiroContas",
+        "summary": "Plano de contas",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "description": "Pesquisa por conta ou descricao",
+            "x-ms-summary": "Pesquisa"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Conta": {
+                        "type": "string"
+                      },
+                      "Descricao": {
+                        "type": "string"
+                      },
+                      "TipoConta": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista contas do plano contabilistico (SNC). Pesquisar por numero de conta ou descricao. Cada conta tem codigo, descricao e tipo de conta."
+      }
+    },
+    "/financeiro/pendentes/clientes": {
+      "get": {
+        "tags": [
+          "Financeiro"
+        ],
+        "operationId": "GetPendentesClientes",
+        "summary": "Dividas de clientes",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Clientes devedores",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Entidade": {
+                        "type": "string"
+                      },
+                      "Nome": {
+                        "type": "string"
+                      },
+                      "Telefone": {
+                        "type": "string"
+                      },
+                      "Email": {
+                        "type": "string"
+                      },
+                      "totalPendente": {
+                        "type": "number"
+                      },
+                      "numDocumentos": {
+                        "type": "integer"
+                      },
+                      "vencimentoMaisAntigo": {
+                        "type": "string"
+                      },
+                      "totalVencido": {
+                        "type": "number"
+                      },
+                      "maxDiasAtraso": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista clientes com dividas pendentes, agrupados por cliente. Mostra total pendente, total vencido, numero de documentos, data do vencimento mais antigo, dias de atraso maximo, telefone e email. Ordenado por total pendente."
+      }
+    },
+    "/financeiro/pendentes/fornecedores": {
+      "get": {
+        "tags": [
+          "Financeiro"
+        ],
+        "operationId": "GetPendentesFornecedores",
+        "summary": "Dividas a fornecedores",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "x-ms-summary": "Pagina"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 50,
+            "x-ms-summary": "Limite"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fornecedores credores",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Entidade": {
+                        "type": "string"
+                      },
+                      "Nome": {
+                        "type": "string"
+                      },
+                      "totalPendente": {
+                        "type": "number"
+                      },
+                      "numDocumentos": {
+                        "type": "integer"
+                      },
+                      "vencimentoMaisAntigo": {
+                        "type": "string"
+                      },
+                      "totalVencido": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista fornecedores com valores por pagar, agrupados por fornecedor. Mostra total pendente, total vencido, numero de documentos e data do vencimento mais antigo. Ordenado por total pendente."
+      }
+    },
+    "/financeiro/pendentes/resumo": {
+      "get": {
+        "tags": [
+          "Financeiro"
+        ],
+        "operationId": "GetPendentesResumo",
+        "summary": "Resumo a receber vs a pagar",
+        "responses": {
+          "200": {
+            "description": "Resumo pendentes",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "totalReceber": {
+                  "type": "number"
+                },
+                "totalPagar": {
+                  "type": "number"
+                },
+                "totalReceberVencido": {
+                  "type": "number"
+                },
+                "totalPagarVencido": {
+                  "type": "number"
+                },
+                "numClientesDevedores": {
+                  "type": "integer"
+                },
+                "numFornecedoresCredores": {
+                  "type": "integer"
+                },
+                "saldoLiquido": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "description": "Resumo financeiro: total a receber (clientes) vs total a pagar (fornecedores), totais vencidos, numero de entidades devedoras/credoras e saldo liquido (receber - pagar)."
+      }
+    },
+    "/financeiro/tesouraria/mensal": {
+      "get": {
+        "tags": [
+          "Financeiro"
+        ],
+        "operationId": "GetTesourariaMensal",
+        "summary": "Recebimentos vs pagamentos mensal",
+        "responses": {
+          "200": {
+            "description": "Dados mensais",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "mes": {
+                        "type": "string"
+                      },
+                      "recebimentos": {
+                        "type": "number"
+                      },
+                      "pagamentos": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Evolucao mensal de tesouraria: recebimentos de clientes e pagamentos a fornecedores por mes (formato YYYY-MM). Util para analise de cash-flow."
+      }
+    },
+    "/query": {
+      "post": {
+        "tags": [
+          "Query"
+        ],
+        "operationId": "ExecuteQuery",
+        "summary": "Executar SQL read-only",
+        "description": "Executa queries SQL read-only directamente na base de dados Primavera. Apenas SELECT e WITH (CTE) sao permitidos. INSERT, UPDATE, DELETE, DROP e outras operacoes de escrita sao bloqueadas por seguranca.",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "sql"
+              ],
+              "properties": {
+                "sql": {
+                  "type": "string",
+                  "description": "Query SQL (SELECT only)",
+                  "x-ms-summary": "SQL Query"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "rows": {
+                  "type": "integer"
+                },
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo sql em falta"
+          },
+          "403": {
+            "description": "Operacao bloqueada"
+          }
+        }
+      }
+    },
+    "/copilot/context": {
+      "get": {
+        "tags": [
+          "Copilot"
+        ],
+        "operationId": "GetCopilotContext",
+        "summary": "Contexto da API para LLM/Copilot",
+        "description": "Retorna metadados completos da API para integracao com LLM/Copilot: lista de endpoints disponiveis, filtros suportados, tipos de documento, formato de paginacao e dicas de utilizacao.",
+        "responses": {
+          "200": {
+            "description": "Contexto",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "descricao": {
+                  "type": "string"
+                },
+                "baseUrl": {
+                  "type": "string"
+                },
+                "autenticacao": {
+                  "type": "string"
+                },
+                "endpoints": {
+                  "type": "object"
+                },
+                "tiposDocVenda": {
+                  "type": "object"
+                },
+                "tiposDocCompra": {
+                  "type": "object"
+                },
+                "paginacao": {
+                  "type": "object"
+                },
+                "datas": {
+                  "type": "object"
+                },
+                "dicas": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
