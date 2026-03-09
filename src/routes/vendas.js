@@ -87,7 +87,7 @@ router.get('/top', asyncHandler(async (req, res) => {
   const por = req.query.por || 'cliente';
   const topN = Math.min(100, parseInt(req.query.top) || 10);
   const { dataInicio, dataFim } = parseDateRange(req);
-  let where = "cd.TipoDoc IN ('FA','FAC','FI','FE2','FIT','FNT','FR','FR1','FRI','NC','NCE','NCI','NCT','ND') AND cds.Anulado = 0";
+  let where = "cd.TipoDoc IN ('FA','FAC','FI','FE2','FIT','FNT','FR','FR1','FRI','NC','NCE','NCI','NCT','ND','CIE') AND cds.Anulado = 0";
   const params = {};
   if (dataInicio) { where += ' AND cd.Data >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND cd.Data <= @dataFim'; params.dataFim = dataFim; }
