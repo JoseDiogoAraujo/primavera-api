@@ -926,7 +926,8 @@
             }
           }
         },
-        "operationId": "GetbaseFamilias"
+        "operationId": "GetbaseFamilias",
+        "description": "Familias de artigos"
       }
     },
     "/base/subfamilias": {
@@ -972,7 +973,8 @@
             }
           }
         },
-        "operationId": "GetbaseSubfamilias"
+        "operationId": "GetbaseSubfamilias",
+        "description": "Subfamilias de artigos"
       }
     },
     "/base/marcas": {
@@ -1004,7 +1006,8 @@
             }
           }
         },
-        "operationId": "GetbaseMarcas"
+        "operationId": "GetbaseMarcas",
+        "description": "Marcas"
       }
     },
     "/base/modelos": {
@@ -1049,7 +1052,8 @@
             }
           }
         },
-        "operationId": "GetbaseModelos"
+        "operationId": "GetbaseModelos",
+        "description": "Modelos"
       }
     },
     "/base/armazens": {
@@ -1090,7 +1094,8 @@
             }
           }
         },
-        "operationId": "GetbaseArmazens"
+        "operationId": "GetbaseArmazens",
+        "description": "Armazens"
       }
     },
     "/base/armazens/{id}": {
@@ -1131,7 +1136,8 @@
             }
           }
         },
-        "operationId": "GetbaseArmazensByid"
+        "operationId": "GetbaseArmazensByid",
+        "description": "Detalhe de um armazem"
       }
     },
     "/base/unidades": {
@@ -1163,7 +1169,8 @@
             }
           }
         },
-        "operationId": "GetbaseUnidades"
+        "operationId": "GetbaseUnidades",
+        "description": "Unidades de medida"
       }
     },
     "/base/vendedores": {
@@ -1201,7 +1208,8 @@
             }
           }
         },
-        "operationId": "GetbaseVendedores"
+        "operationId": "GetbaseVendedores",
+        "description": "Vendedores"
       }
     },
     "/base/vendedores/{id}": {
@@ -1230,7 +1238,8 @@
             "description": "Vendedor nao encontrado"
           }
         },
-        "operationId": "GetbaseVendedoresByid"
+        "operationId": "GetbaseVendedoresByid",
+        "description": "Detalhe de um vendedor"
       }
     },
     "/base/vendedores/{id}/vendas": {
@@ -1279,7 +1288,8 @@
             "description": "Vendedor nao encontrado ou sem vendas"
           }
         },
-        "operationId": "GetbaseVendedoresByidVendas"
+        "operationId": "GetbaseVendedoresByidVendas",
+        "description": "Resumo de vendas de um vendedor"
       }
     },
     "/base/zonas": {
@@ -1311,7 +1321,8 @@
             }
           }
         },
-        "operationId": "GetbaseZonas"
+        "operationId": "GetbaseZonas",
+        "description": "Zonas geograficas"
       }
     },
     "/base/condpag": {
@@ -1352,7 +1363,8 @@
             }
           }
         },
-        "operationId": "GetbaseCondpag"
+        "operationId": "GetbaseCondpag",
+        "description": "Condicoes de pagamento"
       }
     },
     "/base/moedas": {
@@ -1396,7 +1408,8 @@
             }
           }
         },
-        "operationId": "GetbaseMoedas"
+        "operationId": "GetbaseMoedas",
+        "description": "Moedas"
       }
     },
     "/base/iva": {
@@ -1434,7 +1447,8 @@
             }
           }
         },
-        "operationId": "GetbaseIva"
+        "operationId": "GetbaseIva",
+        "description": "Tabela de IVA"
       }
     },
     "/base/series": {
@@ -1497,7 +1511,8 @@
             }
           }
         },
-        "operationId": "GetbaseSeries"
+        "operationId": "GetbaseSeries",
+        "description": "Series de documentos de venda"
       }
     },
     "/base/tiposdoc": {
@@ -1541,7 +1556,8 @@
             }
           }
         },
-        "operationId": "GetbaseTiposdoc"
+        "operationId": "GetbaseTiposdoc",
+        "description": "Tipos de documento de venda"
       }
     },
     "/clientes": {
