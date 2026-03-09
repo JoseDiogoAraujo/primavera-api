@@ -140,22 +140,45 @@ router.get('/recentes/:cliente', asyncHandler(async (req, res) => {
 
   const result = await query(`
     SELECT cd.Id, cd.TipoDoc, cd.Serie, cd.NumDoc, cd.Entidade, cd.Nome, cd.Data,
-           cd.TotalMerc, cd.TotalDesc, cd.TotalIva, cd.TotalDocumento, cd.Moeda, cd.CondPag
+           cd.TotalMerc, cd.TotalDesc, cd.TotalIva, cd.TotalDocumento, cd.Moeda, cd.CondPag,
+           ld.Artigo, ld.Descricao as ArtigoDescricao, ld.Quantidade, ld.Unidade,
+           ld.PrecUnit, ld.PrecoLiquido, ld.TotalIliquido as TotalLinha, ld.Armazem
     FROM CabecDoc cd
     INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    INNER JOIN LinhasDoc ld ON ld.IdCabecDoc = cd.Id
     WHERE cd.TipoDoc = 'FA'
       AND cd.Entidade = @cliente
       AND cds.Anulado = 0
       AND cd.Data >= @dataInicio
       AND cd.Data <= @dataFim
-    ORDER BY cd.Data DESC
+    ORDER BY cd.Data DESC, ld.NumLinha
   `, { cliente, dataInicio, dataFim });
 
+  // Agrupar linhas por documento
+  const docs = {};
+  for (const row of result.recordset) {
+    if (!docs[row.Id]) {
+      docs[row.Id] = {
+        Id: row.Id, TipoDoc: row.TipoDoc, Serie: row.Serie, NumDoc: row.NumDoc,
+        Entidade: row.Entidade, Nome: row.Nome, Data: row.Data,
+        TotalMerc: row.TotalMerc, TotalDesc: row.TotalDesc, TotalIva: row.TotalIva,
+        TotalDocumento: row.TotalDocumento, Moeda: row.Moeda, CondPag: row.CondPag,
+        linhas: []
+      };
+    }
+    docs[row.Id].linhas.push({
+      Artigo: row.Artigo, Descricao: row.ArtigoDescricao, Quantidade: row.Quantidade,
+      Unidade: row.Unidade, PrecUnit: row.PrecUnit, PrecoLiquido: row.PrecoLiquido,
+      TotalLinha: row.TotalLinha, Armazem: row.Armazem
+    });
+  }
+
+  const data = Object.values(docs);
   res.json({
     cliente,
     ano: anoPassado,
-    totalDocumentos: result.recordset.length,
-    data: result.recordset
+    totalDocumentos: data.length,
+    data
   });
 }));
 
