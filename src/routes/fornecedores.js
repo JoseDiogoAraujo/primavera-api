@@ -5,19 +5,16 @@ const { parsePagination, parseDateRange } = require('../middleware/pagination');
 
 const router = Router();
 
+// GET /fornecedores - Listar fornecedores
 router.get('/', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
-  const search = req.query.search || '';
   let where = '1=1';
   const params = {};
-  if (search) {
+
+  if (req.query.search) {
     where += ' AND (Fornecedor LIKE @search OR Nome LIKE @search OR NumContrib LIKE @search OR Email LIKE @search)';
-    params.search = `%${search}%`;
+    params.search = `%${req.query.search}%`;
   }
-  if (req.query.nome) { where += ' AND Nome LIKE @nome'; params.nome = `%${req.query.nome}%`; }
-  if (req.query.contribuinte) { where += ' AND NumContrib LIKE @contribuinte'; params.contribuinte = `%${req.query.contribuinte}%`; }
-  if (req.query.localidade) { where += ' AND Local LIKE @localidade'; params.localidade = `%${req.query.localidade}%`; }
-  if (req.query.pais) { where += ' AND Pais = @pais'; params.pais = req.query.pais; }
 
   const countResult = await query(`SELECT COUNT(*) as total FROM Fornecedores WHERE ${where}`, params);
   const result = await query(`
@@ -32,33 +29,20 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json({ page, limit, total: countResult.recordset[0].total, data: result.recordset });
 }));
 
-// GET /fornecedores/analytics/resumo - Resumo de fornecedores
-router.get('/analytics/resumo', asyncHandler(async (req, res) => {
-  const result = await query(`
-    SELECT COUNT(*) as total,
-      SUM(CASE WHEN SituacaoActual = 'Activo' OR SituacaoActual IS NULL THEN 1 ELSE 0 END) as activos,
-      SUM(Debito) as totalDebito,
-      SUM(Credito) as totalCredito
-    FROM Fornecedores
-  `);
-  res.json(result.recordset[0]);
-}));
-
+// GET /fornecedores/:id
 router.get('/:id', asyncHandler(async (req, res) => {
   const result = await query('SELECT * FROM Fornecedores WHERE Fornecedor = @id', { id: req.params.id });
   if (!result.recordset.length) return res.status(404).json({ error: 'Fornecedor nao encontrado' });
   res.json(result.recordset[0]);
 }));
 
+// GET /fornecedores/:id/documentos - Documentos de compra do fornecedor
 router.get('/:id/documentos', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
   const { dataInicio, dataFim } = parseDateRange(req);
   let where = 'Entidade = @id';
   const params = { id: req.params.id };
   if (req.query.tipoDoc) { where += ' AND TipoDoc = @tipoDoc'; params.tipoDoc = req.query.tipoDoc; }
-  if (req.query.serie) { where += ' AND Serie = @serie'; params.serie = req.query.serie; }
-  if (req.query.totalMin) { where += ' AND TotalDocumento >= @totalMin'; params.totalMin = parseFloat(req.query.totalMin); }
-  if (req.query.totalMax) { where += ' AND TotalDocumento <= @totalMax'; params.totalMax = parseFloat(req.query.totalMax); }
   if (dataInicio) { where += ' AND DataDoc >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND DataDoc <= @dataFim'; params.dataFim = dataFim; }
 
@@ -73,6 +57,7 @@ router.get('/:id/documentos', asyncHandler(async (req, res) => {
   res.json({ page, limit, total: countResult.recordset[0].total, data: result.recordset });
 }));
 
+// GET /fornecedores/:id/saldo - Saldo conta corrente
 router.get('/:id/saldo', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT
@@ -86,7 +71,7 @@ router.get('/:id/saldo', asyncHandler(async (req, res) => {
   res.json(result.recordset[0] || {});
 }));
 
-// GET /fornecedores/:id/artigos - Artigos fornecidos por este fornecedor
+// GET /fornecedores/:id/artigos - Artigos fornecidos
 router.get('/:id/artigos', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT af.Artigo, a.Descricao, af.RefFornecedor, af.UnidadeCompra,

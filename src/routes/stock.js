@@ -8,14 +8,13 @@ const router = Router();
 // GET /stock/actual - Stock actual por artigo
 router.get('/actual', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
-  const armazem = req.query.armazem || '';
-  const familia = req.query.familia || '';
-
   let where = "MovStock = 'S' AND STKActual > 0";
   const params = {};
-  if (armazem) { where += ' AND ArmazemSugestao = @armazem'; params.armazem = armazem; }
-  if (familia) { where += ' AND Familia = @familia'; params.familia = familia; }
 
+  if (req.query.search) { where += ' AND (Artigo LIKE @search OR Descricao LIKE @search)'; params.search = `%${req.query.search}%`; }
+  if (req.query.armazem) { where += ' AND ArmazemSugestao = @armazem'; params.armazem = req.query.armazem; }
+
+  const countResult = await query(`SELECT COUNT(*) as total FROM Artigo WHERE ${where}`, params);
   const result = await query(`
     SELECT Artigo, Descricao, Familia, ArmazemSugestao as Armazem, STKActual, STKMinimo, STKMaximo,
            PCMedio, PCUltimo, (STKActual * PCMedio) as valorStock, UnidadeBase
@@ -24,51 +23,7 @@ router.get('/actual', asyncHandler(async (req, res) => {
     ORDER BY valorStock DESC
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `, { ...params, offset, limit });
-  res.json({ page, limit, data: result.recordset });
-}));
-
-// GET /stock/por-armazem - Stock agrupado por armazem
-router.get('/por-armazem', asyncHandler(async (req, res) => {
-  const result = await query(`
-    SELECT a.ArmazemSugestao as Armazem, arm.Descricao,
-           COUNT(*) as numArtigos,
-           SUM(a.STKActual) as totalUnidades,
-           SUM(a.STKActual * a.PCMedio) as valorTotal
-    FROM Artigo a
-    LEFT JOIN Armazens arm ON a.ArmazemSugestao = arm.Armazem
-    WHERE a.MovStock = 'S' AND a.STKActual > 0
-    GROUP BY a.ArmazemSugestao, arm.Descricao
-    ORDER BY valorTotal DESC
-  `);
-  res.json({ data: result.recordset });
-}));
-
-// GET /stock/por-familia - Stock agrupado por familia
-router.get('/por-familia', asyncHandler(async (req, res) => {
-  const result = await query(`
-    SELECT a.Familia, f.Descricao,
-           COUNT(*) as numArtigos,
-           SUM(a.STKActual) as totalUnidades,
-           SUM(a.STKActual * a.PCMedio) as valorTotal
-    FROM Artigo a
-    LEFT JOIN Familias f ON a.Familia = f.Familia
-    WHERE a.MovStock = 'S' AND a.STKActual > 0
-    GROUP BY a.Familia, f.Descricao
-    ORDER BY valorTotal DESC
-  `);
-  res.json({ data: result.recordset });
-}));
-
-// GET /stock/por-localizacao - Stock agrupado por localizacao
-router.get('/por-localizacao', asyncHandler(async (req, res) => {
-  const result = await query(`
-    SELECT a.Artigo, a.Descricao, a.Localizacao, a.ArmazemSugestao as Armazem,
-      a.STKActual, a.STKActual * a.PCMedio as valorStock
-    FROM Artigo a
-    WHERE a.MovStock = 'S' AND a.STKActual > 0 AND a.Localizacao IS NOT NULL AND a.Localizacao != ''
-    ORDER BY a.Localizacao, a.Artigo
-  `);
-  res.json({ data: result.recordset });
+  res.json({ page, limit, total: countResult.recordset[0].total, data: result.recordset });
 }));
 
 // GET /stock/alertas - Artigos com stock critico
@@ -94,126 +49,31 @@ router.get('/alertas', asyncHandler(async (req, res) => {
   res.json({ total: result.recordset.length, data: result.recordset });
 }));
 
-// GET /stock/numeros-serie - Numeros de serie
-router.get('/numeros-serie', asyncHandler(async (req, res) => {
-  const artigo = req.query.artigo || '';
-  const armazem = req.query.armazem || '';
-
-  let where = '1=1';
-  const params = {};
-  if (artigo) { where += ' AND Artigo = @artigo'; params.artigo = artigo; }
-  if (armazem) { where += ' AND Armazem = @armazem'; params.armazem = armazem; }
-
-  const result = await query(`
-    SELECT Artigo, NumeroSerie, Armazem, Localizacao, Lote, EstadoStock, Documento
-    FROM INV_NumerosSerie
-    WHERE ${where}
-    ORDER BY Artigo, NumeroSerie
-  `, params);
-  res.json({ data: result.recordset });
-}));
-
-// GET /stock/transferencias - Transferencias de stock
-router.get('/transferencias', asyncHandler(async (req, res) => {
-  const { dataInicio, dataFim } = parseDateRange(req);
-
-  let where = '1=1';
-  const params = {};
-  if (dataInicio) { where += ' AND ct.Data >= @dataInicio'; params.dataInicio = dataInicio; }
-  if (dataFim) { where += ' AND ct.Data <= @dataFim'; params.dataFim = dataFim; }
-
-  const result = await query(`
-    SELECT ct.ID, ct.TipoDoc, ct.NumDoc, ct.Serie, ct.Entidade, ct.Data, ct.Observacoes,
-      ct.Moeda, ct.TipoEntidade
-    FROM INV_CabecTransferencias ct
-    WHERE ${where}
-    ORDER BY ct.Data DESC
-  `, params);
-  res.json({ data: result.recordset });
-}));
-
-// GET /stock/transferencias/:id - Detalhe de transferencia com linhas
-router.get('/transferencias/:id', asyncHandler(async (req, res) => {
-  const header = await query('SELECT * FROM INV_CabecTransferencias WHERE ID = @id', { id: req.params.id });
-  if (!header.recordset.length) return res.status(404).json({ error: 'Transferencia nao encontrada' });
-
-  const lines = await query(`
-    SELECT * FROM INV_LinhasTransferencias
-    WHERE IdCabecTransferencias = @id
-    ORDER BY NumLinha
-  `, { id: req.params.id });
-
-  res.json({ ...header.recordset[0], linhas: lines.recordset });
-}));
-
-// GET /stock/lotes - Lotes de artigos
-router.get('/lotes', asyncHandler(async (req, res) => {
-  const artigo = req.query.artigo || '';
-
-  let where = "Lote IS NOT NULL AND Lote != ''";
-  const params = {};
-  if (artigo) { where += ' AND Artigo = @artigo'; params.artigo = artigo; }
-
-  const result = await query(`
-    SELECT DISTINCT Artigo, Lote, Armazem, Localizacao
-    FROM INV_Movimentos
-    WHERE ${where}
-    ORDER BY Artigo, Lote
-  `, params);
-  res.json({ data: result.recordset });
-}));
-
-// GET /stock/movimentos - Movimentos de stock recentes
+// GET /stock/movimentos - Movimentos de stock
 router.get('/movimentos', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
   const { dataInicio, dataFim } = parseDateRange(req);
-  const tipo = req.query.tipo || '';
-
   let where = '1=1';
   const params = {};
+
+  if (req.query.artigo) { where += ' AND m.Artigo = @artigo'; params.artigo = req.query.artigo; }
+  if (req.query.armazem) { where += ' AND m.Armazem = @armazem'; params.armazem = req.query.armazem; }
   if (dataInicio) { where += ' AND m.Data >= @dataInicio'; params.dataInicio = dataInicio; }
   if (dataFim) { where += ' AND m.Data <= @dataFim'; params.dataFim = dataFim; }
-  if (tipo) { where += ' AND m.TipoMovimento = @tipo'; params.tipo = tipo; }
 
+  const countResult = await query(`SELECT COUNT(*) as total FROM INV_Movimentos m WHERE ${where}`, params);
   const result = await query(`
     SELECT m.Data, m.TipoMovimento, m.Artigo, m.Armazem, m.Quantidade,
-           m.Stock_Anterior, m.Stock_Actual,
-           (m.Stock_Actual - m.Stock_Anterior) as variacao,
-           m.DataIntegracao, m.NumRegisto
+           m.Stock_Anterior, m.Stock_Actual, m.NumRegisto
     FROM INV_Movimentos m
     WHERE ${where}
     ORDER BY m.Data DESC, m.NumRegisto DESC
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `, { ...params, offset, limit });
-  res.json({ page, limit, data: result.recordset });
+  res.json({ page, limit, total: countResult.recordset[0].total, data: result.recordset });
 }));
 
-// GET /stock/rotacao - Analise de rotacao de stock
-router.get('/rotacao', asyncHandler(async (req, res) => {
-  const dias = parseInt(req.query.dias) || 90;
-  const result = await query(`
-    SELECT a.Artigo, a.Descricao, a.STKActual, a.PCMedio,
-           (a.STKActual * a.PCMedio) as valorStock,
-           ISNULL(v.qtdVendida, 0) as qtdVendida,
-           CASE WHEN ISNULL(v.qtdVendida, 0) > 0
-             THEN a.STKActual / (v.qtdVendida / @dias)
-             ELSE 9999 END as diasCobertura
-    FROM Artigo a
-    LEFT JOIN (
-      SELECT ld.Artigo, SUM(ld.Quantidade) as qtdVendida
-      FROM LinhasDoc ld
-      INNER JOIN CabecDoc cd ON ld.IdCabecDoc = cd.Id
-      WHERE cd.TipoDoc IN ('FA','FR','FS')
-        AND cd.Data >= DATEADD(DAY, -@dias, GETDATE())
-      GROUP BY ld.Artigo
-    ) v ON a.Artigo = v.Artigo
-    WHERE a.MovStock = 'S' AND a.STKActual > 0
-    ORDER BY diasCobertura DESC
-  `, { dias });
-  res.json({ dias, data: result.recordset });
-}));
-
-// GET /stock/resumo
+// GET /stock/resumo - Totais de inventario
 router.get('/resumo', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT
