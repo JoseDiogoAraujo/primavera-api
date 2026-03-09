@@ -39,6 +39,7 @@ router.get('/context', asyncHandler(async (req, res) => {
         detalhe: { path: '/api/vendas/documentos/:id', descricao: 'Cabecalho + linhas do documento' },
         resumo: { path: '/api/vendas/resumo', parametros: 'from, to', descricao: 'Totais facturacao' },
         top: { path: '/api/vendas/top', parametros: 'por (cliente|artigo|vendedor), top (default 10), from, to', descricao: 'Rankings' },
+        recentes: { path: '/api/vendas/recentes/:cliente', descricao: 'Faturas (FA) do ano passado com artigos, quantidades e precos por documento' },
       },
       compras: {
         descricao: 'Documentos de compra',
