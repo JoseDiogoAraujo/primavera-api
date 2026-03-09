@@ -87,9 +87,9 @@ router.get('/pendentes/resumo', asyncHandler(async (req, res) => {
 router.get('/tesouraria/mensal', asyncHandler(async (req, res) => {
   const result = await query(`
     SELECT FORMAT(c.Data, 'yyyy-MM') as mes,
-      SUM(CASE WHEN c.TipoEntidade = 'C' THEN c.TotalDocumento ELSE 0 END) as recebimentos,
-      SUM(CASE WHEN c.TipoEntidade = 'F' THEN c.TotalDocumento ELSE 0 END) as pagamentos
-    FROM CabecMovCCT c
+      SUM(CASE WHEN c.TipoEntidade = 'C' THEN c.TotalCredito ELSE 0 END) as recebimentos,
+      SUM(CASE WHEN c.TipoEntidade = 'F' THEN c.TotalDebito ELSE 0 END) as pagamentos
+    FROM CabecTesouraria c
     GROUP BY FORMAT(c.Data, 'yyyy-MM')
     ORDER BY mes
   `);

@@ -49,7 +49,7 @@ router.get('/modelos', asyncHandler(async (req, res) => {
 // GET /armazens - Listar armazens
 router.get('/armazens', asyncHandler(async (req, res) => {
   const result = await query(
-    'SELECT Armazem, Descricao, Morada, Localidade, CodPostal FROM Armazens ORDER BY Armazem'
+    'SELECT Armazem, Descricao, Morada, Localidade, Cp as CodPostal FROM Armazens ORDER BY Armazem'
   );
   res.json(result.recordset);
 }));
@@ -91,11 +91,11 @@ router.get('/vendedores/:id', asyncHandler(async (req, res) => {
 // GET /vendedores/:id/vendas - Resumo de vendas de um vendedor
 router.get('/vendedores/:id/vendas', asyncHandler(async (req, res) => {
   const result = await query(`
-    SELECT v.Vendedor, v.Nome, COUNT(*) as totalDocs, SUM(cd.TotalDocumento) as totalVendas
+    SELECT v.Vendedor, v.Nome, COUNT(DISTINCT cd.Id) as totalDocs, SUM(ld.TotalIliquido) as totalVendas
     FROM Vendedores v
-    JOIN CabecDoc cd ON cd.Vendedor = v.Vendedor
-    JOIN CabecDocStatus s ON s.IdCabecDoc = cd.Id
-    WHERE s.Anulado = 0 AND v.Vendedor = @id
+    JOIN LinhasDoc ld ON ld.Vendedor = v.Vendedor
+    JOIN CabecDoc cd ON cd.Id = ld.IdCabecDoc
+    WHERE v.Vendedor = @id
     GROUP BY v.Vendedor, v.Nome
   `, { id: req.params.id });
   if (!result.recordset.length) return res.status(404).json({ error: 'Vendedor nao encontrado ou sem vendas' });
@@ -111,7 +111,7 @@ router.get('/zonas', asyncHandler(async (req, res) => {
 // GET /condpag - Condicoes de pagamento
 router.get('/condpag', asyncHandler(async (req, res) => {
   const result = await query(
-    'SELECT CondPag, Descricao, NumDias, TipoDesconto FROM CondPag ORDER BY CondPag'
+    'SELECT CondPag, Descricao, Dias, Desconto, TipoCondicao FROM CondPag ORDER BY CondPag'
   );
   res.json(result.recordset);
 }));
@@ -119,7 +119,7 @@ router.get('/condpag', asyncHandler(async (req, res) => {
 // GET /moedas - Listar moedas
 router.get('/moedas', asyncHandler(async (req, res) => {
   const result = await query(
-    'SELECT Moeda, Descricao, Abreviatura, Cambio FROM Moedas ORDER BY Moeda'
+    'SELECT Moeda, Descricao, Compra as TaxaCambio, Venda, IDIso, Simbolo FROM Moedas ORDER BY Moeda'
   );
   res.json(result.recordset);
 }));
@@ -141,7 +141,7 @@ router.get('/series', asyncHandler(async (req, res) => {
     params.tipoDoc = req.query.tipoDoc;
   }
   const result = await query(
-    `SELECT TipoDoc, Serie, Descricao, Numerador, DataInicial, DataFinal, SerieInactiva, SeriePorDefeito FROM Series${where} ORDER BY TipoDoc, Serie`,
+    `SELECT TipoDoc, Serie, Descricao, Numerador, DataInicial, DataFinal, SerieInactiva, SeriePorDefeito FROM SeriesVendas${where} ORDER BY TipoDoc, Serie`,
     params
   );
   res.json(result.recordset);
@@ -150,7 +150,7 @@ router.get('/series', asyncHandler(async (req, res) => {
 // GET /tiposdoc - Tipos de documento
 router.get('/tiposdoc', asyncHandler(async (req, res) => {
   const result = await query(
-    'SELECT Documento, Descricao, MovStock, MovConta, MovContab, Anulacao FROM TiposDoc ORDER BY Documento'
+    'SELECT Documento, Descricao, LigaStocks as MovStock, LigaCC as MovCC, LigaContab as MovContab FROM DocumentosVenda ORDER BY Documento'
   );
   res.json(result.recordset);
 }));

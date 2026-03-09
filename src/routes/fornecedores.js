@@ -74,12 +74,12 @@ router.get('/:id/saldo', asyncHandler(async (req, res) => {
 // GET /fornecedores/:id/artigos - Artigos fornecidos
 router.get('/:id/artigos', asyncHandler(async (req, res) => {
   const result = await query(`
-    SELECT af.Artigo, a.Descricao, af.RefFornecedor, af.UnidadeCompra,
-      af.PrecoCompra, af.Desconto1, af.PrazoEntrega, af.FornecedorPrincipal
+    SELECT af.Artigo, a.Descricao, af.ReferenciaFor as RefFornecedor, af.UnidadeCompra,
+      af.PrCustoUltimo, af.UltDescontoComercialCompra as Desconto, af.PrazoEntrega, af.Moeda
     FROM ArtigoFornecedor af
     JOIN Artigo a ON a.Artigo = af.Artigo
     WHERE af.Fornecedor = @id
-    ORDER BY af.FornecedorPrincipal DESC, a.Descricao
+    ORDER BY a.Descricao
   `, { id: req.params.id });
   res.json({ data: result.recordset });
 }));

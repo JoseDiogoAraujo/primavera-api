@@ -42,7 +42,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
 // GET /artigos/:id/precos - Precos do artigo
 router.get('/:id/precos', asyncHandler(async (req, res) => {
   const result = await query(`
-    SELECT Artigo, Descricao, PVP1, PVP2, PVP3, PVP4, PVP5, PVP6, PCMedio, PCUltimo, PCPadrao, Margem
+    SELECT Artigo, Descricao, PCMedio, PCUltimo, PCPadrao
     FROM Artigo WHERE Artigo = @id
   `, { id: req.params.id });
   if (!result.recordset.length) return res.status(404).json({ error: 'Artigo nao encontrado' });
@@ -52,12 +52,12 @@ router.get('/:id/precos', asyncHandler(async (req, res) => {
 // GET /artigos/:id/fornecedores - Fornecedores do artigo
 router.get('/:id/fornecedores', asyncHandler(async (req, res) => {
   const result = await query(`
-    SELECT af.Fornecedor, f.Nome, af.RefFornecedor, af.UnidadeCompra,
-      af.PrecoCompra, af.Desconto1, af.Desconto2, af.PrazoEntrega, af.FornecedorPrincipal
+    SELECT af.Fornecedor, f.Nome, af.ReferenciaFor as RefFornecedor, af.UnidadeCompra,
+      af.PrCustoUltimo, af.UltDescontoComercialCompra as Desconto, af.PrazoEntrega, af.Moeda
     FROM ArtigoFornecedor af
     JOIN Fornecedores f ON f.Fornecedor = af.Fornecedor
     WHERE af.Artigo = @id
-    ORDER BY af.FornecedorPrincipal DESC, af.PrecoCompra
+    ORDER BY af.PrCustoUltimo
   `, { id: req.params.id });
   res.json({ data: result.recordset });
 }));
