@@ -993,7 +993,24 @@
                           "TotalIva": { "type": "number" },
                           "TotalDocumento": { "type": "number" },
                           "Moeda": { "type": "string" },
-                          "CondPag": { "type": "string" }
+                          "CondPag": { "type": "string" },
+                          "linhas": {
+                            "type": "array",
+                            "description": "Artigos/linhas do documento",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "Artigo": { "type": "string", "example": "CIM01" },
+                                "Descricao": { "type": "string", "example": "Cimento Portland" },
+                                "Quantidade": { "type": "number", "example": 50 },
+                                "Unidade": { "type": "string", "example": "UN" },
+                                "PrecUnit": { "type": "number", "example": 30.0 },
+                                "PrecoLiquido": { "type": "number", "example": 28.5 },
+                                "TotalLinha": { "type": "number", "example": 1425.0 },
+                                "Armazem": { "type": "string", "example": "A1" }
+                              }
+                            }
+                          }
                         }
                       }
                     }
