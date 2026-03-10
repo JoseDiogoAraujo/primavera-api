@@ -5,15 +5,16 @@ const router = Router();
 
 router.get('/context', asyncHandler(async (req, res) => {
   res.json({
-    descricao: 'API LLM-Ready para dados do ERP Primavera V10 (Cegid) da Cimenteira do Louro. Valores em EUR. Todos os calculos de faturacao usam 34 tipos de documento com notas de credito como valores negativos.',
-    versao: '4.0',
+    descricao: 'API LLM-Ready para dados do ERP Primavera V10 (Cegid) da Cimenteira do Louro. Valores em EUR, sempre sem IVA (TotalDocumento - TotalIva). Documentos anulados sao sempre excluidos.',
+    versao: '5.0',
     baseUrl: '/api',
     autenticacao: 'Basic Auth (user:password) ou header x-api-key',
     logicaFaturacao: {
-      descricao: 'Volume de negocios calculado com SUM(CASE WHEN creditNote THEN -total ELSE total END)',
-      documentosFaturacao: ['DV','DVI','FR','FR1','FRI','FS','FS1','EFAA','VD','VDI','NC','NCE','NCI','NCT','ND','FA','FA2','FAA','FAC','FE2','FI','FI2','FIT','FM','FMI','FNT','ADD','ADE','ADI','ADT','ALC','ALE','ALI','CIE'],
-      notasCredito: ['NC','NCE','NCI','NCT','ALC','ALE','ALI'],
+      descricao: 'Volume de faturacao nacional: SUM dos docs positivos menos docs negativos, sem IVA',
+      documentosPositivos: ['FA','FR','FNT','FAC'],
+      documentosNegativos: ['NC','NCT','NPC'],
       orcamentos: ['POR'],
+      calculo: 'SUM(CASE WHEN TipoDoc IN (NC,NCT,NPC) THEN -(TotalDocumento-TotalIva) ELSE (TotalDocumento-TotalIva) END)',
       nota: 'Documentos anulados (CabecDocStatus.Anulado=1) sao sempre excluidos.',
     },
     endpoints: {
@@ -171,6 +172,71 @@ router.get('/context', asyncHandler(async (req, res) => {
           responde: ['Qual o cliente que mais comprou o artigo X em 2025?'],
         },
       },
+      vendas: {
+        descricao: 'Documentos de venda, resumos, rankings e analytics geografico',
+        documentos: {
+          method: 'GET',
+          path: '/api/vendas/documentos',
+          params: 'search, tipoDoc, cliente, zona, serie, artigo, vendedor, dataInicio (YYYY-MM-DD), dataFim (YYYY-MM-DD), page, limit',
+          descricao: 'Lista documentos de venda com filtros genericos. Pesquisa por nome, entidade ou numero de documento.',
+          responde: [
+            'Que faturas tem o cliente X?',
+            'Documentos de venda do mes passado?',
+            'Faturas com o artigo Y?',
+          ],
+        },
+        documentoDetalhe: {
+          method: 'GET',
+          path: '/api/vendas/documentos/:id',
+          descricao: 'Detalhes de um documento com cabecalho e todas as linhas (artigos, quantidades, precos).',
+          responde: [
+            'Mostra os detalhes da fatura X?',
+            'Que artigos tem este documento?',
+          ],
+        },
+        resumo: {
+          method: 'GET',
+          path: '/api/vendas/resumo',
+          params: 'dataInicio (YYYY-MM-DD), dataFim (YYYY-MM-DD)',
+          descricao: 'Totais de vendas: total facturado, total abatimentos, numero de faturas, numero de clientes, ticket medio.',
+          responde: [
+            'Qual o total facturado este ano?',
+            'Quantas faturas emitimos?',
+            'Qual o ticket medio?',
+          ],
+        },
+        top: {
+          method: 'GET',
+          path: '/api/vendas/top',
+          params: 'por (cliente|artigo|vendedor, default: cliente), top (default 10, max 100), dataInicio, dataFim',
+          descricao: 'Rankings genericos por cliente, artigo ou vendedor.',
+          responde: [
+            'Top 10 clientes por vendas?',
+            'Top artigos mais vendidos?',
+            'Que vendedor vendeu mais?',
+          ],
+        },
+        recentes: {
+          method: 'GET',
+          path: '/api/vendas/recentes/:cliente',
+          descricao: 'Faturas (FA) do ano passado de um cliente, agrupadas por documento com linhas de artigos.',
+          responde: [
+            'Que faturas teve o cliente no ano passado?',
+            'Historico de compras recentes do cliente?',
+          ],
+        },
+        porLocalidade: {
+          method: 'GET',
+          path: '/api/vendas/analytics/por-localidade',
+          params: 'top (default 100, max 500), dataInicio (YYYY-MM-DD), dataFim (YYYY-MM-DD)',
+          descricao: 'Vendas por localidade com coordenadas GPS. Usa apenas docs positivos (FA,FR,FNT,FAC) sem IVA. Localidades normalizadas para municipios portugueses. Usado pelo Grafana geomap.',
+          responde: [
+            'Onde vendemos mais?',
+            'Vendas por localidade no mapa?',
+            'Top localidades por faturacao?',
+          ],
+        },
+      },
       comercial: {
         descricao: 'Inteligencia comercial: resumos, localidades, risco, recomendacoes, vendedores',
         resumo: {
@@ -247,7 +313,10 @@ router.get('/context', asyncHandler(async (req, res) => {
       'Usar /comercial/clientes-risco para identificar clientes que deixaram de comprar',
       'Usar /comercial/recomendacoes/:id para sugestoes de cross-selling',
       'Usar /artigos/:id/cliente/:clienteId para preco especifico por cliente',
-      'Notas de credito (NC, ALC, etc.) sao automaticamente subtraidas nos totais',
+      'Usar /vendas/documentos para pesquisar faturas por cliente, artigo ou vendedor',
+      'Usar /vendas/analytics/por-localidade para ver vendas no mapa por localidade',
+      'Docs positivos: FA, FR, FNT, FAC. Negativos (abatidos): NC, NCT, NPC',
+      'Valores sempre sem IVA (TotalDocumento - TotalIva)',
       'Todos os endpoints excluem documentos anulados automaticamente',
     ],
   });
