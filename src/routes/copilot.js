@@ -74,6 +74,46 @@ router.get('/context', asyncHandler(async (req, res) => {
             'Quando foi a ultima compra vs ultimo orcamento?',
           ],
         },
+        comparacaoAnual: {
+          method: 'GET',
+          path: '/api/clientes/:id/comparacao-anual',
+          params: 'ano (default: ano corrente)',
+          descricao: 'Faturacao do ano vs ano anterior. Mostra se esta a comprar mais ou menos.',
+          responde: [
+            'O cliente esta a comprar mais ou menos que o ano passado?',
+            'Comparar faturacao 2025 vs 2024 do cliente X?',
+          ],
+        },
+        total12Meses: {
+          method: 'GET',
+          path: '/api/clientes/:id/total-12-meses',
+          descricao: 'Total faturado nos ultimos 12 meses com evolucao mensal.',
+          responde: [
+            'Quanto faturou o cliente nos ultimos 12 meses?',
+            'Qual a evolucao mensal do cliente?',
+          ],
+        },
+        maiorVenda: {
+          method: 'GET',
+          path: '/api/clientes/:id/maior-venda',
+          params: 'ano, mes (YYYY-MM), periodo',
+          descricao: 'Maior venda/compra do cliente com artigos. Use ano=2025 para filtrar.',
+          responde: [
+            'Qual foi a maior venda do cliente X?',
+            'Maior compra do cliente em 2025?',
+          ],
+        },
+        taxaConversao: {
+          method: 'GET',
+          path: '/api/clientes/:id/taxa-conversao',
+          params: 'ano, mes (YYYY-MM), periodo',
+          descricao: 'Orcamentos elaborados vs adjudicados (fechados). Taxa de conversao e valores.',
+          responde: [
+            'Quantos orcamentos foram adjudicados em 2025?',
+            'Qual a taxa de conversao de orcamentos do cliente?',
+            'Quanto valor em orcamentos esta pendente?',
+          ],
+        },
         orcamentos: {
           method: 'GET',
           path: '/api/clientes/:id/orcamentos',

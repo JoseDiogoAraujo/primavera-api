@@ -794,4 +794,218 @@ router.get('/:id/atividade', asyncHandler(async (req, res) => {
   });
 }));
 
+// ---------------------------------------------------------------------------
+// GET /clientes/:id/comparacao-anual - YTD vs ano passado
+// ---------------------------------------------------------------------------
+router.get('/:id/comparacao-anual', asyncHandler(async (req, res) => {
+  const clienteId = req.params.id;
+  const ano = req.query.ano ? parseInt(req.query.ano) : new Date().getFullYear();
+  const anoAnterior = ano - 1;
+
+  // Faturacao do ano pedido (ou ate hoje se for o ano corrente)
+  const anoAtualResult = await query(`
+    SELECT
+      ${NET_TOTAL_EXPR} AS faturacao,
+      COUNT(DISTINCT cd.Id) AS numDocumentos,
+      ${NET_MARGIN_EXPR} AS margemMedia
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.Data >= DATEFROMPARTS(@ano, 1, 1)
+      AND cd.Data < DATEFROMPARTS(@ano + 1, 1, 1)
+  `, { clienteId, ano });
+
+  // Mesmo periodo do ano anterior
+  const anoAnteriorResult = await query(`
+    SELECT
+      ${NET_TOTAL_EXPR} AS faturacao,
+      COUNT(DISTINCT cd.Id) AS numDocumentos,
+      ${NET_MARGIN_EXPR} AS margemMedia
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.Data >= DATEFROMPARTS(@anoAnterior, 1, 1)
+      AND cd.Data < DATEFROMPARTS(@anoAnterior + 1, 1, 1)
+  `, { clienteId, anoAnterior });
+
+  const fatAtual = anoAtualResult.recordset[0]?.faturacao || 0;
+  const fatAnterior = anoAnteriorResult.recordset[0]?.faturacao || 0;
+  const variacao = fatAnterior !== 0
+    ? Math.round(((fatAtual - fatAnterior) / Math.abs(fatAnterior)) * 10000) / 100
+    : (fatAtual > 0 ? 100 : 0);
+
+  res.json({
+    cliente: clienteId,
+    anoAtual: {
+      ano,
+      faturacao: fatAtual,
+      numDocumentos: anoAtualResult.recordset[0]?.numDocumentos || 0,
+      margemMedia: Math.round((anoAtualResult.recordset[0]?.margemMedia || 0) * 100) / 100,
+    },
+    anoAnterior: {
+      ano: anoAnterior,
+      faturacao: fatAnterior,
+      numDocumentos: anoAnteriorResult.recordset[0]?.numDocumentos || 0,
+      margemMedia: Math.round((anoAnteriorResult.recordset[0]?.margemMedia || 0) * 100) / 100,
+    },
+    variacaoPercent: variacao,
+    tendencia: variacao > 5 ? 'a comprar mais' : variacao < -5 ? 'a comprar menos' : 'estavel',
+  });
+}));
+
+// ---------------------------------------------------------------------------
+// GET /clientes/:id/total-12-meses - Total faturado ultimos 12 meses
+// ---------------------------------------------------------------------------
+router.get('/:id/total-12-meses', asyncHandler(async (req, res) => {
+  const clienteId = req.params.id;
+
+  const totalResult = await query(`
+    SELECT
+      ${NET_TOTAL_EXPR} AS totalFaturado,
+      ${NET_MARGIN_EXPR} AS margemMedia,
+      COUNT(DISTINCT cd.Id) AS numDocumentos,
+      MIN(cd.Data) AS primeiraCompra,
+      MAX(cd.Data) AS ultimaCompra
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.Data >= DATEADD(MONTH, -12, GETDATE())
+  `, { clienteId });
+
+  // Evolucao mensal dos ultimos 12 meses
+  const mensalResult = await query(`
+    SELECT
+      YEAR(cd.Data) AS ano,
+      MONTH(cd.Data) AS mes,
+      ${NET_TOTAL_EXPR} AS total
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.Data >= DATEADD(MONTH, -12, GETDATE())
+    GROUP BY YEAR(cd.Data), MONTH(cd.Data)
+    ORDER BY ano, mes
+  `, { clienteId });
+
+  const r = totalResult.recordset[0] || {};
+
+  res.json({
+    cliente: clienteId,
+    periodo: 'ultimos-12-meses',
+    totalFaturado: r.totalFaturado || 0,
+    margemMedia: Math.round((r.margemMedia || 0) * 100) / 100,
+    numDocumentos: r.numDocumentos || 0,
+    primeiraCompra: r.primeiraCompra || null,
+    ultimaCompra: r.ultimaCompra || null,
+    evolucaoMensal: mensalResult.recordset.map(m => ({
+      ano: m.ano,
+      mes: m.mes,
+      total: m.total || 0,
+    })),
+  });
+}));
+
+// ---------------------------------------------------------------------------
+// GET /clientes/:id/maior-venda - Maior venda/compra do cliente
+// ---------------------------------------------------------------------------
+router.get('/:id/maior-venda', asyncHandler(async (req, res) => {
+  const clienteId = req.params.id;
+  const df = parseDateFilter(req, 'cd.Data');
+
+  // Maior venda por valor total
+  const maiorResult = await query(`
+    SELECT TOP 1
+      cd.Id, cd.TipoDoc, cd.NumDoc, cd.Serie, cd.Data,
+      cd.TotalDocumento AS total
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc NOT IN (${CREDIT_IN})
+      AND ${df.whereClause}
+    ORDER BY cd.TotalDocumento DESC
+  `, { clienteId });
+
+  let artigos = [];
+  if (maiorResult.recordset.length) {
+    const docId = maiorResult.recordset[0].Id;
+    const linhasResult = await query(`
+      SELECT
+        ld.Artigo AS artigo,
+        a.Descricao AS descricao,
+        ld.Quantidade AS quantidade,
+        ld.Unidade AS unidade,
+        ld.PrecUnit AS precoUnitario,
+        ld.TotalIliquido AS totalLinha
+      FROM LinhasDoc ld
+      LEFT JOIN Artigo a ON a.Artigo = ld.Artigo
+      WHERE ld.IdCabecDoc = @docId
+      ORDER BY ld.TotalIliquido DESC
+    `, { docId });
+    artigos = linhasResult.recordset;
+  }
+
+  const doc = maiorResult.recordset[0] || null;
+
+  res.json({
+    cliente: clienteId,
+    periodo: df.label,
+    maiorVenda: doc
+      ? {
+          tipoDoc: doc.TipoDoc,
+          numDoc: doc.NumDoc,
+          serie: doc.Serie,
+          data: doc.Data,
+          total: doc.total,
+          artigos,
+        }
+      : null,
+  });
+}));
+
+// ---------------------------------------------------------------------------
+// GET /clientes/:id/taxa-conversao - Orcamentos elaborados vs adjudicados
+// ---------------------------------------------------------------------------
+router.get('/:id/taxa-conversao', asyncHandler(async (req, res) => {
+  const clienteId = req.params.id;
+  const df = parseDateFilter(req, 'cd.Data');
+
+  const result = await query(`
+    SELECT
+      COUNT(*) AS totalOrcamentos,
+      SUM(CASE WHEN ISNULL(cds.Fechado, 0) = 1 THEN 1 ELSE 0 END) AS adjudicados,
+      SUM(CASE WHEN ISNULL(cds.Fechado, 0) = 0 THEN 1 ELSE 0 END) AS pendentes,
+      SUM(cd.TotalDocumento) AS valorTotalOrcamentos,
+      SUM(CASE WHEN ISNULL(cds.Fechado, 0) = 1 THEN cd.TotalDocumento ELSE 0 END) AS valorAdjudicado,
+      SUM(CASE WHEN ISNULL(cds.Fechado, 0) = 0 THEN cd.TotalDocumento ELSE 0 END) AS valorPendente
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE cd.TipoEntidade = 'C'
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc = 'POR'
+      AND ISNULL(cds.Anulado, 0) = 0
+      AND ${df.whereClause}
+  `, { clienteId });
+
+  const r = result.recordset[0] || {};
+  const total = r.totalOrcamentos || 0;
+  const adj = r.adjudicados || 0;
+  const taxa = total > 0 ? Math.round((adj / total) * 10000) / 100 : 0;
+
+  res.json({
+    cliente: clienteId,
+    periodo: df.label,
+    totalOrcamentos: total,
+    adjudicados: adj,
+    pendentes: r.pendentes || 0,
+    taxaConversao: taxa,
+    valorTotalOrcamentos: r.valorTotalOrcamentos || 0,
+    valorAdjudicado: r.valorAdjudicado || 0,
+    valorPendente: r.valorPendente || 0,
+  });
+}));
+
 module.exports = router;
