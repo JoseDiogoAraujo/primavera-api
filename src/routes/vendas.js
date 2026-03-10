@@ -203,21 +203,19 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
     params.dataFim = req.query.dataFim;
   }
 
-  // Docs de faturacao: FA, FR, FNT, FAC (positivos) / NC, NCT, NPC (abatidos)
+  // Apenas docs positivos (FA, FR, FNT, FAC) — sem NC/NCT/NPC
+  // Localidade do LocalDescarga ou Fac_Cploc
   const sqlText = `
     SELECT TOP (@topN)
       CASE
-        WHEN LTRIM(RTRIM(ISNULL(cd.LocalDescarga,''))) NOT IN ('','.','..','Morada do Cliente','Morada da Obra')
+        WHEN LTRIM(RTRIM(ISNULL(cd.LocalDescarga,''))) NOT IN ('','.','..','Morada do Cliente','Morada da Obra','Nossas Instalacoes')
           THEN LTRIM(RTRIM(cd.LocalDescarga))
         WHEN LTRIM(RTRIM(ISNULL(c.Fac_Cploc,''))) NOT IN ('','.','..')
           THEN LTRIM(RTRIM(c.Fac_Cploc))
         ELSE 'Sem Localidade'
       END AS localidadeRaw,
       COUNT(*) AS numDocumentos,
-      ROUND(SUM(CASE
-        WHEN cd.TipoDoc IN ('NC','NCT','NPC') THEN -(cd.TotalDocumento - cd.TotalIva)
-        ELSE (cd.TotalDocumento - cd.TotalIva)
-      END), 2) AS totalVendas,
+      ROUND(SUM(cd.TotalDocumento - cd.TotalIva), 2) AS totalVendas,
       ROUND(AVG(cd.TotalDocumento - cd.TotalIva), 2) AS mediaDocumento,
       COUNT(DISTINCT cd.Entidade) AS numClientes,
       MIN(cd.Data) AS primeiraVenda,
@@ -225,11 +223,11 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
     FROM CabecDoc cd
     LEFT JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
     LEFT JOIN Clientes c ON cd.Entidade = c.Cliente
-    WHERE cd.TipoDoc IN ('FA','FR','FNT','FAC','NC','NCT','NPC')
+    WHERE cd.TipoDoc IN ('FA','FR','FNT','FAC')
       AND ISNULL(cds.Anulado, 0) = 0
       ${dateWhere}
     GROUP BY CASE
-        WHEN LTRIM(RTRIM(ISNULL(cd.LocalDescarga,''))) NOT IN ('','.','..','Morada do Cliente','Morada da Obra')
+        WHEN LTRIM(RTRIM(ISNULL(cd.LocalDescarga,''))) NOT IN ('','.','..','Morada do Cliente','Morada da Obra','Nossas Instalacoes')
           THEN LTRIM(RTRIM(cd.LocalDescarga))
         WHEN LTRIM(RTRIM(ISNULL(c.Fac_Cploc,''))) NOT IN ('','.','..')
           THEN LTRIM(RTRIM(c.Fac_Cploc))
