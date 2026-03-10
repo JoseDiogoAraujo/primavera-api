@@ -45,16 +45,11 @@ app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDoc, {
   customSiteTitle: 'Primavera V10 API',
 }));
 
-// Routes
+// Routes – LLM-Ready API v4.0
 app.use('/api/health', require('./routes/health'));
 app.use('/api/clientes', require('./routes/clientes'));
 app.use('/api/artigos', require('./routes/artigos'));
-app.use('/api/vendas', require('./routes/vendas'));
-app.use('/api/compras', require('./routes/compras'));
-app.use('/api/fornecedores', require('./routes/fornecedores'));
-app.use('/api/stock', require('./routes/stock'));
-app.use('/api/financeiro', require('./routes/financeiro'));
-app.use('/api/base', require('./routes/base'));
+app.use('/api/comercial', require('./routes/comercial'));
 app.use('/api/query', require('./routes/query'));
 app.use('/api/copilot', require('./routes/copilot'));
 

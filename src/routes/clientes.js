@@ -1,88 +1,605 @@
-const { Router } = require('express');
-const { query } = require('../db');
+const router = require('express').Router();
+const { query, sql } = require('../db');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { parsePagination, parseDateRange } = require('../middleware/pagination');
 
-const router = Router();
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
-// GET /clientes - Listar clientes
+const BILLING_DOC_TYPES = [
+  'DV','DVI','FR','FR1','FRI','FS','FS1','EFAA','VD','VDI',
+  'NC','NCE','NCI','NCT','ND','FA','FA2','FAA','FAC','FE2',
+  'FI','FI2','FIT','FM','FMI','FNT','ADD','ADE','ADI','ADT',
+  'ALC','ALE','ALI','CIE'
+];
+
+const CREDIT_NOTE_TYPES = ['NC','NCE','NCI','NCT','ALC','ALE','ALI'];
+
+// Build SQL IN-list literal from array (safe - hardcoded values only)
+const inList = (arr) => arr.map(t => `'${t}'`).join(',');
+
+const BILLING_IN = inList(BILLING_DOC_TYPES);
+const CREDIT_IN = inList(CREDIT_NOTE_TYPES);
+
+// Reusable SQL fragment: net billing total (credit notes negative)
+const NET_TOTAL_EXPR = `
+  SUM(CASE WHEN cd.TipoDoc IN (${CREDIT_IN})
+    THEN -cd.TotalDocumento ELSE cd.TotalDocumento END)`;
+
+// Reusable SQL fragment: net margin weighted
+const NET_MARGIN_EXPR = `
+  AVG(CASE WHEN cd.TipoDoc IN (${CREDIT_IN})
+    THEN -cd.MargemDoc ELSE cd.MargemDoc END)`;
+
+// Reusable SQL fragment: billing base WHERE
+const BILLING_BASE_WHERE = `
+      cd.TipoEntidade = 'C'
+  AND cd.TipoDoc IN (${BILLING_IN})
+  AND ISNULL(cds.Anulado, 0) = 0`;
+
+// ---------------------------------------------------------------------------
+// GET /clientes - Listar clientes (paginado, com pesquisa)
+// ---------------------------------------------------------------------------
 router.get('/', asyncHandler(async (req, res) => {
   const { limit, offset, page } = parsePagination(req);
   let where = '1=1';
   const params = {};
 
   if (req.query.search) {
-    where += ' AND (Cliente LIKE @search OR Nome LIKE @search OR NumContrib LIKE @search OR Email LIKE @search OR Fac_Tel LIKE @search)';
+    where += ` AND (c.Cliente LIKE @search OR c.Nome LIKE @search
+      OR c.NumContrib LIKE @search OR c.Email LIKE @search
+      OR c.Fac_Tel LIKE @search)`;
     params.search = `%${req.query.search}%`;
   }
 
-  const countResult = await query(`SELECT COUNT(*) as total FROM Clientes WHERE ${where}`, params);
+  if (req.query.zona) {
+    where += ' AND c.Zona = @zona';
+    params.zona = req.query.zona;
+  }
+
+  if (req.query.vendedor) {
+    where += ' AND c.Vendedor = @vendedor';
+    params.vendedor = req.query.vendedor;
+  }
+
+  const countResult = await query(
+    `SELECT COUNT(*) as total FROM Clientes c WHERE ${where}`, params
+  );
+
   const result = await query(`
-    SELECT Cliente, Nome, NumContrib, Fac_Mor as Morada, Fac_Local as Localidade, Fac_Cp as CodPostal,
-           Fac_Tel as Telefone, Email, Pais, CondPag, Moeda, Vendedor, Zona, Desconto,
-           TotalDeb, LimiteCred, Situacao, DataCriacao
-    FROM Clientes
+    SELECT
+      c.Cliente, c.Nome, c.NumContrib,
+      c.Fac_Mor   AS Morada,
+      c.Fac_Local AS Localidade,
+      c.Fac_Cp    AS CodPostal,
+      c.Fac_Tel   AS Telefone,
+      c.Email, c.Pais, c.Zona,
+      ISNULL(z.Descricao, '') AS ZonaDescricao,
+      c.Vendedor, c.CondPag, c.ModoPag, c.Moeda,
+      c.Desconto, c.TipoPrec, c.TipoCli,
+      c.LimiteCred, c.TotalDeb,
+      c.ClienteAnulado, c.DataCriacao, c.Distrito
+    FROM Clientes c
+    LEFT JOIN Zonas z ON c.Zona = z.Zona
     WHERE ${where}
-    ORDER BY Nome
+    ORDER BY c.Nome
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `, { ...params, offset, limit });
 
-  res.json({ page, limit, total: countResult.recordset[0].total, data: result.recordset });
+  res.json({
+    page,
+    limit,
+    total: countResult.recordset[0].total,
+    data: result.recordset
+  });
 }));
 
-// GET /clientes/:id
+// ---------------------------------------------------------------------------
+// GET /clientes/segmentacao - Segmentacao de clientes
+// ---------------------------------------------------------------------------
+router.get('/segmentacao', asyncHandler(async (req, res) => {
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+  const periodo = req.query.periodo || 'ano'; // mes | trimestre | ano
+
+  // Build date boundaries based on periodo
+  let dateExpr;
+  switch (periodo) {
+    case 'mes':
+      dateExpr = `DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)`;
+      break;
+    case 'trimestre':
+      dateExpr = `DATEADD(QUARTER, DATEDIFF(QUARTER, 0, GETDATE()), 0)`;
+      break;
+    default: // ano
+      dateExpr = `DATEFROMPARTS(YEAR(GETDATE()), 1, 1)`;
+  }
+
+  const prevDateExpr = periodo === 'mes'
+    ? `DATEADD(MONTH, -1, ${dateExpr})`
+    : periodo === 'trimestre'
+      ? `DATEADD(QUARTER, -1, ${dateExpr})`
+      : `DATEADD(YEAR, -1, ${dateExpr})`;
+
+  // Optional filters
+  let filterWhere = '';
+  const params = { limit };
+
+  if (req.query.zona) {
+    filterWhere += ' AND cl.Zona = @zona';
+    params.zona = req.query.zona;
+  }
+  if (req.query.localidade) {
+    filterWhere += ' AND cl.Fac_Local LIKE @localidade';
+    params.localidade = `%${req.query.localidade}%`;
+  }
+
+  // 1. Top clientes no periodo atual
+  const topResult = await query(`
+    SELECT TOP (@limit)
+      cd.Entidade AS cliente,
+      cl.Nome     AS nome,
+      cl.Zona     AS zona,
+      ISNULL(z.Descricao, '') AS zonaDescricao,
+      cl.TipoCli,
+      ${NET_TOTAL_EXPR} AS total
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    INNER JOIN Clientes cl ON cd.Entidade = cl.Cliente
+    LEFT  JOIN Zonas z ON cl.Zona = z.Zona
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = cl.Cliente
+      AND cd.Data >= ${dateExpr}
+      ${filterWhere}
+    GROUP BY cd.Entidade, cl.Nome, cl.Zona, z.Descricao, cl.TipoCli
+    ORDER BY total DESC
+  `, params);
+
+  // 2. Crescimento / declinio: periodo atual vs anterior
+  const growthResult = await query(`
+    ;WITH atual AS (
+      SELECT cd.Entidade,
+        ${NET_TOTAL_EXPR} AS totalAtual
+      FROM CabecDoc cd
+      INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+      INNER JOIN Clientes cl ON cd.Entidade = cl.Cliente
+      WHERE ${BILLING_BASE_WHERE}
+        AND cd.Data >= ${dateExpr}
+        ${filterWhere}
+      GROUP BY cd.Entidade
+    ),
+    anterior AS (
+      SELECT cd.Entidade,
+        ${NET_TOTAL_EXPR} AS totalAnterior
+      FROM CabecDoc cd
+      INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+      INNER JOIN Clientes cl ON cd.Entidade = cl.Cliente
+      WHERE ${BILLING_BASE_WHERE}
+        AND cd.Data >= ${prevDateExpr}
+        AND cd.Data <  ${dateExpr}
+        ${filterWhere}
+      GROUP BY cd.Entidade
+    )
+    SELECT TOP (@limit)
+      ISNULL(a.Entidade, b.Entidade) AS cliente,
+      cl.Nome AS nome,
+      ISNULL(a.totalAtual, 0)        AS periodoAtual,
+      ISNULL(b.totalAnterior, 0)     AS periodoAnterior,
+      CASE
+        WHEN ISNULL(b.totalAnterior, 0) = 0 THEN 100
+        ELSE ROUND(((ISNULL(a.totalAtual,0) - ISNULL(b.totalAnterior,0))
+              / NULLIF(b.totalAnterior, 0)) * 100, 2)
+      END AS variacao
+    FROM atual a
+    FULL OUTER JOIN anterior b ON a.Entidade = b.Entidade
+    INNER JOIN Clientes cl ON ISNULL(a.Entidade, b.Entidade) = cl.Cliente
+    WHERE (ISNULL(a.totalAtual, 0) > 0 OR ISNULL(b.totalAnterior, 0) > 0)
+    ORDER BY variacao DESC
+  `, params);
+
+  // Separate growth and decline
+  const crescimento = [];
+  const declinio = [];
+  for (const row of growthResult.recordset) {
+    if (row.variacao >= 0) {
+      crescimento.push(row);
+    } else {
+      declinio.push(row);
+    }
+  }
+  // Sort decline by worst first
+  declinio.sort((a, b) => a.variacao - b.variacao);
+
+  // 3. Clientes inativos (sem compra ha mais de 6 meses)
+  const inativosResult = await query(`
+    SELECT TOP (@limit)
+      cl.Cliente   AS cliente,
+      cl.Nome      AS nome,
+      cl.TipoCli,
+      t.ultimaCompra,
+      DATEDIFF(DAY, t.ultimaCompra, GETDATE()) AS diasSemCompra,
+      t.totalHistorico
+    FROM Clientes cl
+    INNER JOIN (
+      SELECT cd.Entidade,
+        MAX(cd.Data) AS ultimaCompra,
+        ${NET_TOTAL_EXPR} AS totalHistorico
+      FROM CabecDoc cd
+      INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+      WHERE ${BILLING_BASE_WHERE}
+      GROUP BY cd.Entidade
+      HAVING MAX(cd.Data) < DATEADD(MONTH, -6, GETDATE())
+    ) t ON cl.Cliente = t.Entidade
+    WHERE ISNULL(cl.ClienteAnulado, 0) = 0
+      ${filterWhere}
+    ORDER BY t.totalHistorico DESC
+  `, params);
+
+  res.json({
+    periodo,
+    topClientes: topResult.recordset,
+    crescimento,
+    declinio,
+    inativos: inativosResult.recordset
+  });
+}));
+
+// ---------------------------------------------------------------------------
+// GET /clientes/top - Ranking rapido de clientes
+// ---------------------------------------------------------------------------
+router.get('/top', asyncHandler(async (req, res) => {
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+  const periodo = req.query.periodo || 'ano';
+
+  let dateExpr;
+  switch (periodo) {
+    case 'mes':
+      dateExpr = `DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)`;
+      break;
+    case 'trimestre':
+      dateExpr = `DATEADD(QUARTER, DATEDIFF(QUARTER, 0, GETDATE()), 0)`;
+      break;
+    default:
+      dateExpr = `DATEFROMPARTS(YEAR(GETDATE()), 1, 1)`;
+  }
+
+  let filterWhere = '';
+  const params = { limit };
+
+  if (req.query.zona) {
+    filterWhere += ' AND cl.Zona = @zona';
+    params.zona = req.query.zona;
+  }
+  if (req.query.localidade) {
+    filterWhere += ' AND cl.Fac_Local LIKE @localidade';
+    params.localidade = `%${req.query.localidade}%`;
+  }
+
+  const result = await query(`
+    SELECT TOP (@limit)
+      cd.Entidade AS cliente,
+      cl.Nome     AS nome,
+      cl.Zona     AS zona,
+      ISNULL(z.Descricao, '') AS zonaDescricao,
+      cl.Fac_Local AS localidade,
+      cl.TipoCli,
+      ${NET_TOTAL_EXPR} AS totalFaturado,
+      ${NET_MARGIN_EXPR} AS margemMedia,
+      COUNT(DISTINCT cd.Id)  AS numDocumentos,
+      MAX(cd.Data)           AS ultimaCompra
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    INNER JOIN Clientes cl ON cd.Entidade = cl.Cliente
+    LEFT  JOIN Zonas z ON cl.Zona = z.Zona
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Data >= ${dateExpr}
+      ${filterWhere}
+    GROUP BY cd.Entidade, cl.Nome, cl.Zona, z.Descricao, cl.Fac_Local, cl.TipoCli
+    ORDER BY totalFaturado DESC
+  `, params);
+
+  res.json({
+    periodo,
+    total: result.recordset.length,
+    data: result.recordset
+  });
+}));
+
+// ---------------------------------------------------------------------------
+// GET /clientes/:id - Detalhes basicos do cliente
+// ---------------------------------------------------------------------------
 router.get('/:id', asyncHandler(async (req, res) => {
-  const result = await query('SELECT * FROM Clientes WHERE Cliente = @id', { id: req.params.id });
-  if (!result.recordset.length) return res.status(404).json({ error: 'Cliente nao encontrado' });
+  const result = await query(`
+    SELECT
+      c.Cliente, c.Nome, c.NumContrib,
+      c.Fac_Mor   AS Morada,
+      c.Fac_Local AS Localidade,
+      c.Fac_Cp    AS CodPostal,
+      c.Fac_Tel   AS Telefone,
+      c.Email, c.Pais, c.Zona,
+      ISNULL(z.Descricao, '') AS ZonaDescricao,
+      c.Vendedor, c.CondPag,
+      ISNULL(cp.Descricao, '') AS CondPagDescricao,
+      c.ModoPag, c.Moeda,
+      c.Desconto, c.TipoPrec, c.TipoCli, c.TipoCred,
+      c.LimiteCred, c.TotalDeb,
+      ISNULL(c.LimiteCred, 0) - ISNULL(c.TotalDeb, 0) AS CreditoDisponivel,
+      c.ClienteAnulado, c.DataCriacao, c.Distrito
+    FROM Clientes c
+    LEFT JOIN Zonas z ON c.Zona = z.Zona
+    LEFT JOIN CondPag cp ON c.CondPag = cp.CondPag
+    WHERE c.Cliente = @id
+  `, { id: req.params.id });
+
+  if (!result.recordset.length) {
+    return res.status(404).json({ error: 'Cliente nao encontrado' });
+  }
+
   res.json(result.recordset[0]);
 }));
 
-// GET /clientes/:id/documentos - Documentos de venda do cliente
-router.get('/:id/documentos', asyncHandler(async (req, res) => {
-  const { limit, offset, page } = parsePagination(req);
-  const { dataInicio, dataFim } = parseDateRange(req);
-  let where = 'Entidade = @id';
-  const params = { id: req.params.id };
-  if (req.query.tipoDoc) { where += ' AND TipoDoc = @tipoDoc'; params.tipoDoc = req.query.tipoDoc; }
-  if (dataInicio) { where += ' AND Data >= @dataInicio'; params.dataInicio = dataInicio; }
-  if (dataFim) { where += ' AND Data <= @dataFim'; params.dataFim = dataFim; }
+// ---------------------------------------------------------------------------
+// GET /clientes/:id/perfil-financeiro
+// ---------------------------------------------------------------------------
+router.get('/:id/perfil-financeiro', asyncHandler(async (req, res) => {
+  const clienteId = req.params.id;
 
-  const countResult = await query(`SELECT COUNT(*) as total FROM CabecDoc WHERE ${where}`, params);
-  const result = await query(`
-    SELECT Id, TipoDoc, Serie, NumDoc, Data, Nome, TotalMerc, TotalDesc, TotalIva, TotalDocumento, Moeda
-    FROM CabecDoc
-    WHERE ${where}
-    ORDER BY Data DESC
-    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
-  `, { ...params, offset, limit });
-  res.json({ page, limit, total: countResult.recordset[0].total, data: result.recordset });
-}));
-
-// GET /clientes/:id/saldo - Saldo conta corrente
-router.get('/:id/saldo', asyncHandler(async (req, res) => {
-  const result = await query(`
+  // 1. Client master data + payment conditions
+  const clienteResult = await query(`
     SELECT
-      SUM(CASE WHEN ValorPendente > 0 THEN ValorPendente ELSE 0 END) as totalPendente,
-      COUNT(*) as numDocumentos,
-      MIN(DataVenc) as vencimentoMaisAntigo,
-      SUM(CASE WHEN DataVenc < GETDATE() THEN ValorPendente ELSE 0 END) as totalVencido
-    FROM Pendentes
-    WHERE TipoEntidade = 'C' AND Entidade = @id
-  `, { id: req.params.id });
-  res.json(result.recordset[0] || {});
+      c.Cliente, c.Nome,
+      ISNULL(c.LimiteCred, 0)      AS LimiteCred,
+      ISNULL(c.TotalDeb, 0)        AS TotalDeb,
+      ISNULL(c.ClienteAnulado, 0)  AS ClienteAnulado,
+      c.CondPag,
+      ISNULL(cp.Descricao, '')     AS CondPagDescricao,
+      ISNULL(cp.Dias, 0)           AS CondPagDias,
+      ISNULL(cp.NumPrestacoes, 1)  AS CondPagPrestacoes
+    FROM Clientes c
+    LEFT JOIN CondPag cp ON c.CondPag = cp.CondPag
+    WHERE c.Cliente = @clienteId
+  `, { clienteId });
+
+  if (!clienteResult.recordset.length) {
+    return res.status(404).json({ error: 'Cliente nao encontrado' });
+  }
+
+  const cli = clienteResult.recordset[0];
+
+  // 2. Total pending amounts
+  const pendentesResult = await query(`
+    SELECT
+      ISNULL(SUM(p.ValorPendente), 0) AS totalDivida,
+      ISNULL(SUM(CASE WHEN p.ValorPendente > 0 THEN p.ValorPendente ELSE 0 END), 0) AS saldoPendente,
+      COUNT(*)                         AS numDocumentos
+    FROM Pendentes p
+    WHERE p.TipoEntidade = 'C'
+      AND p.Entidade = @clienteId
+  `, { clienteId });
+
+  const pend = pendentesResult.recordset[0];
+
+  // 3. Overdue invoices detail
+  const vencidasResult = await query(`
+    SELECT
+      p.TipoDoc,
+      p.NumDoc,
+      p.Serie,
+      p.ValorPendente AS valor,
+      p.DataVenc      AS dataVenc,
+      DATEDIFF(DAY, p.DataVenc, GETDATE()) AS diasAtraso
+    FROM Pendentes p
+    WHERE p.TipoEntidade = 'C'
+      AND p.Entidade = @clienteId
+      AND p.ValorPendente > 0
+      AND p.DataVenc < GETDATE()
+    ORDER BY p.DataVenc ASC
+  `, { clienteId });
+
+  const vencidas = vencidasResult.recordset;
+  const vencidasQtd = vencidas.length;
+  const vencidasTotal = vencidas.reduce((s, r) => s + (r.valor || 0), 0);
+  const diasAtrasoArr = vencidas.map(r => r.diasAtraso || 0);
+  const diasAtrasoMedio = vencidasQtd > 0
+    ? Math.round(diasAtrasoArr.reduce((s, d) => s + d, 0) / vencidasQtd)
+    : 0;
+  const maiorAtraso = vencidasQtd > 0 ? Math.max(...diasAtrasoArr) : 0;
+
+  // 4. Average payment days (from documents that were paid - ValorPendente = 0)
+  const prazoResult = await query(`
+    SELECT
+      AVG(DATEDIFF(DAY, p.DataDoc, p.DataVenc)) AS prazoMedioPagamento
+    FROM Pendentes p
+    WHERE p.TipoEntidade = 'C'
+      AND p.Entidade = @clienteId
+      AND p.ValorPendente <= 0.01
+      AND p.DataDoc IS NOT NULL
+      AND p.DataVenc IS NOT NULL
+  `, { clienteId });
+
+  const prazoMedio = prazoResult.recordset[0]?.prazoMedioPagamento || 0;
+
+  res.json({
+    cliente: cli.Cliente,
+    nome: cli.Nome,
+    limiteCreditoTotal: cli.LimiteCred,
+    creditoUtilizado: cli.TotalDeb,
+    creditoDisponivel: Math.max(0, cli.LimiteCred - cli.TotalDeb),
+    bloqueado: cli.ClienteAnulado === 1,
+    totalDivida: pend.totalDivida,
+    saldoPendente: pend.saldoPendente,
+    condicaoPagamento: {
+      codigo: cli.CondPag,
+      descricao: cli.CondPagDescricao,
+      dias: cli.CondPagDias,
+      prestacoes: cli.CondPagPrestacoes
+    },
+    prazoMedioPagamento: Math.round(prazoMedio),
+    faturasVencidas: {
+      quantidade: vencidasQtd,
+      valorTotal: Math.round(vencidasTotal * 100) / 100,
+      diasAtrasoMedio,
+      maiorAtraso,
+      detalhe: vencidas.map(v => ({
+        tipoDoc: v.TipoDoc,
+        numDoc: v.NumDoc,
+        serie: v.Serie,
+        valor: v.valor,
+        dataVenc: v.dataVenc,
+        diasAtraso: v.diasAtraso
+      }))
+    }
+  });
 }));
 
-// GET /clientes/:id/pendentes - Documentos pendentes detalhados
-router.get('/:id/pendentes', asyncHandler(async (req, res) => {
-  const result = await query(`
-    SELECT TipoDoc, Serie, NumDocInt, DataDoc, DataVenc, Moeda,
-      ValorTotal, ValorPendente,
-      DATEDIFF(DAY, DataVenc, GETDATE()) as diasAtraso
-    FROM Pendentes
-    WHERE TipoEntidade = 'C' AND Entidade = @id AND ValorPendente > 0
-    ORDER BY DataVenc
-  `, { id: req.params.id });
-  res.json({ total: result.recordset.length, data: result.recordset });
+// ---------------------------------------------------------------------------
+// GET /clientes/:id/historico
+// ---------------------------------------------------------------------------
+router.get('/:id/historico', asyncHandler(async (req, res) => {
+  const clienteId = req.params.id;
+
+  // Verify client exists
+  const clienteCheck = await query(
+    `SELECT Cliente, Nome FROM Clientes WHERE Cliente = @clienteId`,
+    { clienteId }
+  );
+  if (!clienteCheck.recordset.length) {
+    return res.status(404).json({ error: 'Cliente nao encontrado' });
+  }
+
+  // 1. YTD billing current year
+  const ytdResult = await query(`
+    SELECT
+      ${NET_TOTAL_EXPR} AS faturacaoAnoAtual
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.Data >= DATEFROMPARTS(YEAR(GETDATE()), 1, 1)
+      AND cd.Data <= GETDATE()
+  `, { clienteId });
+
+  // 2. Same period last year (up to same day-of-year)
+  const ytdPrevResult = await query(`
+    SELECT
+      ${NET_TOTAL_EXPR} AS faturacaoMesmoPeriodoAnoPassado
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.Data >= DATEFROMPARTS(YEAR(GETDATE()) - 1, 1, 1)
+      AND cd.Data <= DATEADD(YEAR, -1, GETDATE())
+  `, { clienteId });
+
+  // 3. Last 12 months total
+  const last12Result = await query(`
+    SELECT
+      ${NET_TOTAL_EXPR} AS totalUltimos12Meses
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.Data >= DATEADD(MONTH, -12, GETDATE())
+  `, { clienteId });
+
+  // 4. Average margin
+  const margemResult = await query(`
+    SELECT
+      ${NET_MARGIN_EXPR} AS margemMedia
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.Data >= DATEADD(MONTH, -12, GETDATE())
+  `, { clienteId });
+
+  // 5. Largest sale (billing docs)
+  const maiorVendaResult = await query(`
+    SELECT TOP 1
+      cd.TipoDoc, cd.NumDoc, cd.Serie, cd.Data, cd.TotalDocumento AS total
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc NOT IN (${CREDIT_IN})
+    ORDER BY cd.TotalDocumento DESC
+  `, { clienteId });
+
+  // 6. Last purchase (most recent billing doc)
+  const ultimaCompraResult = await query(`
+    SELECT TOP 1
+      cd.TipoDoc, cd.NumDoc, cd.Serie, cd.Data, cd.TotalDocumento AS total
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc NOT IN (${CREDIT_IN})
+    ORDER BY cd.Data DESC
+  `, { clienteId });
+
+  // 7. Last budget/quote (POR)
+  const ultimoOrcResult = await query(`
+    SELECT TOP 1
+      cd.TipoDoc, cd.NumDoc, cd.Serie, cd.Data, cd.TotalDocumento AS total
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE cd.TipoEntidade = 'C'
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc = 'POR'
+      AND ISNULL(cds.Anulado, 0) = 0
+    ORDER BY cd.Data DESC
+  `, { clienteId });
+
+  // 8. Monthly billing breakdown (last 24 months for trend)
+  const mensalResult = await query(`
+    SELECT
+      MONTH(cd.Data) AS mes,
+      YEAR(cd.Data)  AS ano,
+      ${NET_TOTAL_EXPR} AS total,
+      ${NET_MARGIN_EXPR} AS margem
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.Data >= DATEADD(MONTH, -24, GETDATE())
+    GROUP BY YEAR(cd.Data), MONTH(cd.Data)
+    ORDER BY ano, mes
+  `, { clienteId });
+
+  // Assemble response
+  const fatAtual = ytdResult.recordset[0]?.faturacaoAnoAtual || 0;
+  const fatAnterior = ytdPrevResult.recordset[0]?.faturacaoMesmoPeriodoAnoPassado || 0;
+  const variacao = fatAnterior !== 0
+    ? Math.round(((fatAtual - fatAnterior) / Math.abs(fatAnterior)) * 10000) / 100
+    : (fatAtual > 0 ? 100 : 0);
+
+  const maiorVenda = maiorVendaResult.recordset[0] || null;
+  const ultimaCompra = ultimaCompraResult.recordset[0] || null;
+  const ultimoOrc = ultimoOrcResult.recordset[0] || null;
+
+  res.json({
+    cliente: clienteId,
+    faturacaoAnoAtual: fatAtual || 0,
+    faturacaoMesmoPeriodoAnoPassado: fatAnterior || 0,
+    variacaoPercent: variacao,
+    totalUltimos12Meses: last12Result.recordset[0]?.totalUltimos12Meses || 0,
+    margemMedia: Math.round((margemResult.recordset[0]?.margemMedia || 0) * 100) / 100,
+    maiorVenda: maiorVenda
+      ? { tipoDoc: maiorVenda.TipoDoc, numDoc: maiorVenda.NumDoc, serie: maiorVenda.Serie, data: maiorVenda.Data, total: maiorVenda.total }
+      : null,
+    ultimaCompra: ultimaCompra
+      ? { tipoDoc: ultimaCompra.TipoDoc, numDoc: ultimaCompra.NumDoc, serie: ultimaCompra.Serie, data: ultimaCompra.Data, total: ultimaCompra.total }
+      : null,
+    ultimoOrcamento: ultimoOrc
+      ? { tipoDoc: ultimoOrc.TipoDoc, numDoc: ultimoOrc.NumDoc, serie: ultimoOrc.Serie, data: ultimoOrc.Data, total: ultimoOrc.total }
+      : null,
+    faturacaoMensal: mensalResult.recordset.map(r => ({
+      mes: r.mes,
+      ano: r.ano,
+      total: r.total || 0,
+      margem: Math.round((r.margem || 0) * 100) / 100
+    }))
+  });
 }));
 
 module.exports = router;
