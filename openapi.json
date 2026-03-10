@@ -1,448 +1,190 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Primavera V10 API - LLM Ready",
-    "version": "4.0.0",
-    "description": "API REST otimizada para consumo por LLMs. Dados do ERP Cegid Primavera V10 da Cimenteira do Louro. Todos os cálculos de faturação usam 34 tipos de documento com notas de crédito como valores negativos.",
-    "contact": {
-      "name": "Cimenteira do Louro",
-      "url": "http://primavera-api.cimenteiradolouro.local"
-    }
+    "title": "Primavera V10 API - Cimenteira do Louro",
+    "description": "API LLM-Ready para dados do ERP Primavera V10 (Cegid). Valores em EUR. Todos os calculos de faturacao usam 34 tipos de documento com notas de credito como valores negativos. Documentos anulados sao sempre excluidos.\n\n## Filtros de Periodo\nTodos os endpoints com periodo suportam 3 formas de filtrar:\n- **mes** (YYYY-MM): Mes especifico, ex: `mes=2025-03` para marco 2025\n- **ano** (inteiro): Ano especifico, ex: `ano=2025` para ano inteiro\n- **periodo** (relativo): `mes`, `trimestre`, `semestre`, `ano` (relativo a data atual)\n- **Prioridade**: mes > ano > periodo. Sem parametros usa o ano corrente.\n\n## Autenticacao\n- Basic Auth: `Authorization: Basic base64(user:password)`\n- API Key: Header `x-api-key` ou query param `apikey`",
+    "version": "4.0.0"
   },
   "servers": [
     {
       "url": "http://primavera-api.cimenteiradolouro.local",
-      "description": "Servidor Primavera API"
+      "description": "Servidor interno"
     }
   ],
   "security": [
     { "basicAuth": [] },
-    { "apiKeyHeader": [] },
-    { "apiKeyQuery": [] }
+    { "apiKeyHeader": [] }
   ],
   "tags": [
     {
       "name": "Clientes",
-      "description": "Gestão e análise de clientes"
+      "description": "Perfil financeiro, historico de faturacao, segmentacao e analise de clientes"
     },
     {
       "name": "Artigos",
-      "description": "Gestão e análise de artigos/produtos"
+      "description": "Stock, precos, top vendidos e analise por cliente"
     },
     {
       "name": "Comercial",
-      "description": "Análise comercial, vendas e recomendações"
+      "description": "Inteligencia comercial: resumos, vendedores, risco e recomendacoes"
     },
     {
-      "name": "Utilitários",
-      "description": "Health checks, diagnóstico e queries diretas"
+      "name": "Utilitarios",
+      "description": "Health check e queries SQL"
     }
   ],
   "paths": {
     "/api/clientes": {
       "get": {
         "tags": ["Clientes"],
-        "summary": "Listar clientes",
-        "description": "Retorna lista paginada de clientes com pesquisa e filtros por zona e vendedor.",
         "operationId": "listarClientes",
+        "summary": "Listar clientes com pesquisa",
+        "description": "Lista todos os clientes com filtros de pesquisa, zona e vendedor. Paginado.",
         "parameters": [
-          {
-            "name": "search",
-            "in": "query",
-            "description": "Pesquisa por nome, código ou contribuinte do cliente",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "zona",
-            "in": "query",
-            "description": "Filtrar por zona geográfica",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "vendedor",
-            "in": "query",
-            "description": "Filtrar por código do vendedor",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "description": "Número da página (começa em 1)",
-            "schema": { "type": "integer", "default": 1, "minimum": 1 }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número de resultados por página",
-            "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 500 }
+          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Pesquisa por nome, NIF, email ou telefone" },
+          { "name": "zona", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por zona comercial" },
+          { "name": "vendedor", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por vendedor" },
+          { "$ref": "#/components/parameters/page" },
+          { "$ref": "#/components/parameters/limit" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada de clientes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "page": { "type": "integer" },
+                    "limit": { "type": "integer" },
+                    "total": { "type": "integer" },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "Cliente": { "type": "string", "description": "Codigo do cliente" },
+                          "Nome": { "type": "string" },
+                          "NumContrib": { "type": "string", "description": "NIF" },
+                          "Morada": { "type": "string" },
+                          "Localidade": { "type": "string" },
+                          "Telefone": { "type": "string" },
+                          "Email": { "type": "string" },
+                          "Zona": { "type": "string" },
+                          "ZonaDescricao": { "type": "string" },
+                          "Vendedor": { "type": "string" },
+                          "TipoPrec": { "type": "string", "description": "Tipo de preco (1-6). Define PVP aplicavel." },
+                          "TipoCli": { "type": "string", "description": "Tipo de cliente (revendedor, final, etc.)" },
+                          "LimiteCred": { "type": "number" },
+                          "TotalDeb": { "type": "number" },
+                          "Desconto": { "type": "number" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
+        }
+      }
+    },
+    "/api/clientes/{id}": {
+      "get": {
+        "tags": ["Clientes"],
+        "operationId": "detalheCliente",
+        "summary": "Detalhes de um cliente",
+        "description": "Retorna dados completos do cliente incluindo tipo (TipoCli = revendedor/final), tipo de preco (TipoPrec), desconto, limite de credito e zona.\n\nResponde a:\n- E revendedor ou cliente final?\n- Tem acordo especial de precos?",
+        "parameters": [
+          { "$ref": "#/components/parameters/clienteId" }
         ],
         "responses": {
           "200": {
-            "description": "Lista de clientes",
+            "description": "Dados do cliente",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/ClienteResumo" }
-                    },
-                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                    "Cliente": { "type": "string" },
+                    "Nome": { "type": "string" },
+                    "NumContrib": { "type": "string" },
+                    "Morada": { "type": "string" },
+                    "Localidade": { "type": "string" },
+                    "Email": { "type": "string" },
+                    "Zona": { "type": "string" },
+                    "ZonaDescricao": { "type": "string" },
+                    "Vendedor": { "type": "string" },
+                    "CondPag": { "type": "string" },
+                    "CondPagDescricao": { "type": "string" },
+                    "TipoPrec": { "type": "string", "description": "Tipo preco 1-6, define PVP aplicavel ao cliente" },
+                    "TipoCli": { "type": "string", "description": "Tipo cliente: revendedor, consumidor final, etc." },
+                    "TipoCred": { "type": "string" },
+                    "Desconto": { "type": "number", "description": "Desconto global do cliente em %" },
+                    "LimiteCred": { "type": "number" },
+                    "TotalDeb": { "type": "number" },
+                    "CreditoDisponivel": { "type": "number" }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
     },
-    "/api/clientes/segmentacao": {
+    "/api/clientes/{id}/perfil-financeiro": {
       "get": {
         "tags": ["Clientes"],
-        "summary": "Segmentação de clientes",
-        "description": "Análise de segmentação de clientes por zona e localidade, com métricas de faturação por período.",
-        "operationId": "segmentacaoClientes",
+        "operationId": "perfilFinanceiroCliente",
+        "summary": "Perfil financeiro completo do cliente",
+        "description": "Limite de credito, bloqueio, divida total, faturas vencidas com dias de atraso, e condicoes de pagamento.\n\nResponde a:\n- Cliente ainda tem credito disponivel?\n- Este cliente esta bloqueado para vendas?\n- Qual e o montante em divida do cliente?\n- Quais sao as condicoes de pagamento?\n- Tem faturas vencidas? Quantos dias de atraso?",
         "parameters": [
-          {
-            "name": "zona",
-            "in": "query",
-            "description": "Filtrar por zona geográfica",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "localidade",
-            "in": "query",
-            "description": "Filtrar por localidade",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "ano",
-            "in": "query",
-            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
-            "schema": { "type": "integer", "example": 2025 }
-          },
-          {
-            "name": "mes",
-            "in": "query",
-            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
-            "schema": { "type": "string", "example": "2025-03" }
-          },
-          {
-            "name": "periodo",
-            "in": "query",
-            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
-            "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número máximo de resultados",
-            "schema": { "type": "integer", "default": 50 }
-          }
+          { "$ref": "#/components/parameters/clienteId" }
         ],
         "responses": {
           "200": {
-            "description": "Dados de segmentação",
+            "description": "Perfil financeiro",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "zona": { "type": "string", "example": "Norte" },
-                          "localidade": { "type": "string", "example": "Braga" },
-                          "totalClientes": { "type": "integer", "example": 45 },
-                          "faturacao": { "type": "number", "format": "double", "example": 125430.50 },
-                          "percentagemTotal": { "type": "number", "format": "double", "example": 12.5 }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/api/clientes/top": {
-      "get": {
-        "tags": ["Clientes"],
-        "summary": "Top clientes",
-        "description": "Ranking dos melhores clientes por faturação. Use 'ano' para consultar um ano específico (ex: 2025) ou 'periodo' para o ano corrente.",
-        "operationId": "topClientes",
-        "parameters": [
-          {
-            "name": "ano",
-            "in": "query",
-            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
-            "schema": { "type": "integer", "example": 2025 }
-          },
-          {
-            "name": "mes",
-            "in": "query",
-            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
-            "schema": { "type": "string", "example": "2025-03" }
-          },
-          {
-            "name": "zona",
-            "in": "query",
-            "description": "Filtrar por zona geográfica",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "localidade",
-            "in": "query",
-            "description": "Filtrar por localidade",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "periodo",
-            "in": "query",
-            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
-            "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número de clientes no ranking",
-            "schema": { "type": "integer", "default": 10 }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Ranking de clientes",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "posicao": { "type": "integer", "example": 1 },
-                          "cliente": { "type": "string", "example": "C0001" },
-                          "nome": { "type": "string", "example": "Construções Silva Lda" },
-                          "zona": { "type": "string", "example": "Norte" },
-                          "faturacao": { "type": "number", "format": "double", "example": 245000.00 },
-                          "percentagemTotal": { "type": "number", "format": "double", "example": 8.2 }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/api/clientes/inativos": {
-      "get": {
-        "tags": ["Clientes"],
-        "summary": "Clientes inativos com histórico de compras",
-        "description": "Clientes que tinham compras regulares (mínimo 3 documentos) mas pararam há N meses. Mostra o histórico total e a faturação no período anterior à inatividade.",
-        "operationId": "clientesInativos",
-        "parameters": [
-          { "name": "meses", "in": "query", "description": "Meses sem compra (default: 6)", "schema": { "type": "integer", "default": 6 } },
-          { "name": "minCompras", "in": "query", "description": "Mínimo de compras no histórico para ser considerado (default: 3)", "schema": { "type": "integer", "default": 3 } },
-          { "name": "limit", "in": "query", "description": "Número máximo de resultados", "schema": { "type": "integer", "default": 50 } }
-        ],
-        "responses": {
-          "200": {
-            "description": "Lista de clientes inativos",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "filtros": {
+                    "cliente": { "type": "string" },
+                    "nome": { "type": "string" },
+                    "limiteCreditoTotal": { "type": "number", "description": "Limite de credito total em EUR" },
+                    "creditoUtilizado": { "type": "number" },
+                    "creditoDisponivel": { "type": "number", "description": "Credito ainda disponivel (limite - utilizado)" },
+                    "bloqueado": { "type": "boolean", "description": "true = cliente bloqueado para vendas" },
+                    "totalDivida": { "type": "number" },
+                    "saldoPendente": { "type": "number" },
+                    "condicaoPagamento": {
                       "type": "object",
                       "properties": {
-                        "mesesInativo": { "type": "integer", "example": 6 },
-                        "minCompras": { "type": "integer", "example": 3 }
+                        "codigo": { "type": "string" },
+                        "descricao": { "type": "string" },
+                        "dias": { "type": "integer" },
+                        "prestacoes": { "type": "integer" }
                       }
                     },
-                    "total": { "type": "integer", "example": 12 },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "cliente": { "type": "string", "example": "C0045" },
-                          "nome": { "type": "string", "example": "Construções Almeida" },
-                          "zona": { "type": "string" },
-                          "localidade": { "type": "string" },
-                          "totalComprasHistorico": { "type": "integer", "example": 25 },
-                          "totalFaturadoHistorico": { "type": "number", "format": "double", "example": 180000.00 },
-                          "ultimaCompra": { "type": "string", "format": "date-time" },
-                          "diasSemCompra": { "type": "integer", "example": 245 },
-                          "comprasAnoAnterior": { "type": "integer", "example": 12 },
-                          "faturacaoAnoAnterior": { "type": "number", "format": "double", "example": 95000.00 }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/api/clientes/{id}/comparacao-anual": {
-      "get": {
-        "tags": ["Clientes"],
-        "summary": "Faturação ano vs ano anterior",
-        "description": "Compara faturação do ano pedido com o ano anterior. Indica se o cliente está a comprar mais ou menos.",
-        "operationId": "comparacaoAnualCliente",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "description": "Código do cliente", "schema": { "type": "string" } },
-          { "name": "ano", "in": "query", "description": "Ano a comparar (default: ano corrente)", "schema": { "type": "integer", "example": 2025 } }
-        ],
-        "responses": {
-          "200": {
-            "description": "Comparação anual",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "cliente": { "type": "string", "example": "C0001" },
-                    "anoAtual": {
+                    "prazoMedioPagamento": { "type": "integer", "description": "Dias medios de pagamento" },
+                    "faturasVencidas": {
                       "type": "object",
                       "properties": {
-                        "ano": { "type": "integer", "example": 2025 },
-                        "faturacao": { "type": "number", "format": "double", "example": 85000.00 },
-                        "numDocumentos": { "type": "integer", "example": 34 },
-                        "margemMedia": { "type": "number", "format": "double", "example": 22.5 }
-                      }
-                    },
-                    "anoAnterior": {
-                      "type": "object",
-                      "properties": {
-                        "ano": { "type": "integer", "example": 2024 },
-                        "faturacao": { "type": "number", "format": "double", "example": 78000.00 },
-                        "numDocumentos": { "type": "integer", "example": 30 },
-                        "margemMedia": { "type": "number", "format": "double", "example": 21.0 }
-                      }
-                    },
-                    "variacaoPercent": { "type": "number", "format": "double", "example": 8.97 },
-                    "tendencia": { "type": "string", "enum": ["a comprar mais", "a comprar menos", "estavel"], "example": "a comprar mais" }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/api/clientes/{id}/total-12-meses": {
-      "get": {
-        "tags": ["Clientes"],
-        "summary": "Total faturado últimos 12 meses",
-        "description": "Total faturado nos últimos 12 meses com evolução mensal.",
-        "operationId": "total12MesesCliente",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "description": "Código do cliente", "schema": { "type": "string" } }
-        ],
-        "responses": {
-          "200": {
-            "description": "Total 12 meses",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "cliente": { "type": "string", "example": "C0001" },
-                    "totalFaturado": { "type": "number", "format": "double", "example": 95000.00 },
-                    "margemMedia": { "type": "number", "format": "double", "example": 21.5 },
-                    "numDocumentos": { "type": "integer", "example": 42 },
-                    "primeiraCompra": { "type": "string", "format": "date-time" },
-                    "ultimaCompra": { "type": "string", "format": "date-time" },
-                    "evolucaoMensal": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "ano": { "type": "integer", "example": 2025 },
-                          "mes": { "type": "integer", "example": 3 },
-                          "total": { "type": "number", "format": "double", "example": 8500.00 }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/api/clientes/{id}/maior-venda": {
-      "get": {
-        "tags": ["Clientes"],
-        "summary": "Maior venda do cliente",
-        "description": "Maior venda/compra do cliente com artigos incluídos. Filtrável por ano ou mês.",
-        "operationId": "maiorVendaCliente",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "description": "Código do cliente", "schema": { "type": "string" } },
-          { "name": "ano", "in": "query", "description": "Ano específico (ex: 2025)", "schema": { "type": "integer", "example": 2025 } },
-          { "name": "mes", "in": "query", "description": "Mês específico YYYY-MM (ex: 2025-03)", "schema": { "type": "string", "example": "2025-03" } },
-          { "name": "periodo", "in": "query", "description": "Período relativo (ignorado se ano ou mes fornecido)", "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" } }
-        ],
-        "responses": {
-          "200": {
-            "description": "Maior venda",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "cliente": { "type": "string", "example": "C0001" },
-                    "periodo": { "type": "string", "example": "2025" },
-                    "maiorVenda": {
-                      "type": "object",
-                      "properties": {
-                        "tipoDoc": { "type": "string", "example": "FA" },
-                        "numDoc": { "type": "integer", "example": 789 },
-                        "serie": { "type": "string", "example": "A" },
-                        "data": { "type": "string", "format": "date-time" },
-                        "total": { "type": "number", "format": "double", "example": 25000.00 },
-                        "artigos": {
+                        "quantidade": { "type": "integer" },
+                        "valorTotal": { "type": "number" },
+                        "diasAtrasoMedio": { "type": "integer" },
+                        "maiorAtraso": { "type": "integer" },
+                        "detalhe": {
                           "type": "array",
                           "items": {
                             "type": "object",
                             "properties": {
-                              "artigo": { "type": "string", "example": "CIM001" },
-                              "descricao": { "type": "string", "example": "Cimento Portland" },
-                              "quantidade": { "type": "number", "example": 100 },
-                              "unidade": { "type": "string", "example": "TON" },
-                              "precoUnitario": { "type": "number", "example": 250.00 },
-                              "totalLinha": { "type": "number", "example": 25000.00 }
+                              "tipoDoc": { "type": "string" },
+                              "numDoc": { "type": "integer" },
+                              "valor": { "type": "number" },
+                              "dataVenc": { "type": "string", "format": "date" },
+                              "diasAtraso": { "type": "integer" }
                             }
                           }
                         }
@@ -453,102 +195,185 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
     },
-    "/api/clientes/{id}/taxa-conversao": {
+    "/api/clientes/{id}/historico": {
       "get": {
         "tags": ["Clientes"],
-        "summary": "Orçamentos elaborados vs adjudicados",
-        "description": "Taxa de conversão de orçamentos: quantos foram elaborados, quantos adjudicados (fechados) e valores respetivos.",
-        "operationId": "taxaConversaoCliente",
+        "operationId": "historicoCliente",
+        "summary": "Historico de faturacao do cliente",
+        "description": "Faturacao YTD vs mesmo periodo ano passado, ultimos 12 meses, margem media, maior venda, ultima compra (com artigos comprados), ultimo orcamento, e evolucao mensal (24 meses).\n\nResponde a:\n- Quanto e que este cliente ja comprou este ano?\n- Qual foi o ultimo orcamento (POR) feito? E a ultima compra?\n- Que artigos comprou na ultima compra?",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "description": "Código do cliente", "schema": { "type": "string" } },
-          { "name": "ano", "in": "query", "description": "Ano específico (ex: 2025)", "schema": { "type": "integer", "example": 2025 } },
-          { "name": "mes", "in": "query", "description": "Mês específico YYYY-MM (ex: 2025-03)", "schema": { "type": "string", "example": "2025-03" } },
-          { "name": "periodo", "in": "query", "description": "Período relativo (ignorado se ano ou mes fornecido)", "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" } }
+          { "$ref": "#/components/parameters/clienteId" }
         ],
         "responses": {
           "200": {
-            "description": "Taxa de conversão de orçamentos",
+            "description": "Historico completo",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "cliente": { "type": "string", "example": "C0001" },
-                    "periodo": { "type": "string", "example": "2025" },
-                    "totalOrcamentos": { "type": "integer", "example": 10 },
-                    "adjudicados": { "type": "integer", "example": 7 },
-                    "pendentes": { "type": "integer", "example": 3 },
-                    "taxaConversao": { "type": "number", "format": "double", "example": 70.0 },
-                    "valorTotalOrcamentos": { "type": "number", "format": "double", "example": 120000.00 },
-                    "valorAdjudicado": { "type": "number", "format": "double", "example": 85000.00 },
-                    "valorPendente": { "type": "number", "format": "double", "example": 35000.00 }
+                    "cliente": { "type": "string" },
+                    "faturacaoAnoAtual": { "type": "number", "description": "Total faturado no ano corrente (YTD) em EUR" },
+                    "faturacaoMesmoPeriodoAnoPassado": { "type": "number" },
+                    "variacaoPercent": { "type": "number", "description": "Variacao % YoY" },
+                    "totalUltimos12Meses": { "type": "number" },
+                    "margemMedia": { "type": "number", "description": "Margem media % nos ultimos 12 meses" },
+                    "maiorVenda": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "tipoDoc": { "type": "string" },
+                        "numDoc": { "type": "integer" },
+                        "serie": { "type": "string" },
+                        "data": { "type": "string", "format": "date" },
+                        "total": { "type": "number" }
+                      }
+                    },
+                    "ultimaCompra": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "Ultima compra com lista de artigos",
+                      "properties": {
+                        "tipoDoc": { "type": "string" },
+                        "numDoc": { "type": "integer" },
+                        "data": { "type": "string", "format": "date" },
+                        "total": { "type": "number" },
+                        "artigos": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "artigo": { "type": "string" },
+                              "descricao": { "type": "string" },
+                              "quantidade": { "type": "number" },
+                              "unidade": { "type": "string" },
+                              "precoUnitario": { "type": "number" },
+                              "totalLinha": { "type": "number" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "ultimoOrcamento": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "tipoDoc": { "type": "string" },
+                        "numDoc": { "type": "integer" },
+                        "data": { "type": "string", "format": "date" },
+                        "total": { "type": "number" }
+                      }
+                    },
+                    "faturacaoMensal": {
+                      "type": "array",
+                      "description": "Evolucao mensal dos ultimos 24 meses",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "mes": { "type": "integer" },
+                          "ano": { "type": "integer" },
+                          "total": { "type": "number" },
+                          "margem": { "type": "number" }
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/clientes/{id}/orcamentos": {
+      "get": {
+        "tags": ["Clientes"],
+        "operationId": "orcamentosCliente",
+        "summary": "Orcamentos (POR) de um cliente",
+        "description": "Lista todos os orcamentos de um cliente com filtro por periodo. Mostra se foram adjudicados (fechado=1) ou ainda pendentes.\n\nResponde a:\n- Que orcamentos fez o cliente X em 2024?\n- Orcamentos de janeiro de 2025?",
+        "parameters": [
+          { "$ref": "#/components/parameters/clienteId" },
+          { "$ref": "#/components/parameters/mes" },
+          { "$ref": "#/components/parameters/ano" },
+          { "$ref": "#/components/parameters/periodo" },
+          { "$ref": "#/components/parameters/limitOptional" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de orcamentos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cliente": { "type": "string" },
+                    "periodo": { "type": "string" },
+                    "total": { "type": "integer" },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "TipoDoc": { "type": "string" },
+                          "NumDoc": { "type": "integer" },
+                          "Serie": { "type": "string" },
+                          "Data": { "type": "string", "format": "date" },
+                          "total": { "type": "number" },
+                          "observacoes": { "type": "string" },
+                          "fechado": { "type": "integer", "description": "1=adjudicado, 0=pendente" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/clientes/{id}/atividade": {
       "get": {
         "tags": ["Clientes"],
-        "summary": "Atividade anual: orçamentos vs compras",
-        "description": "Resumo por ano com total de orçamentos e compras, valores e último documento de cada tipo. Útil para identificar clientes que pedem orçamentos mas não compram.",
         "operationId": "atividadeCliente",
+        "summary": "Resumo anual: orcamentos vs compras",
+        "description": "Resumo por ano de quantos orcamentos pediu e quantas compras fez. Mostra ultimo orcamento e ultima compra de cada ano.\n\nResponde a:\n- O cliente pediu orcamentos mas nao comprou?\n- Quantos orcamentos e compras fez em 2025?",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Código do cliente",
-            "schema": { "type": "string" }
-          }
+          { "$ref": "#/components/parameters/clienteId" }
         ],
         "responses": {
           "200": {
-            "description": "Resumo anual de atividade",
+            "description": "Resumo por ano",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "cliente": { "type": "string", "example": "C0001" },
+                    "cliente": { "type": "string" },
                     "resumoPorAno": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "ano": { "type": "integer", "example": 2025 },
+                          "ano": { "type": "integer" },
                           "orcamentos": {
                             "type": "object",
                             "properties": {
-                              "total": { "type": "integer", "example": 10 },
-                              "valorTotal": { "type": "number", "format": "double", "example": 85000.00 },
-                              "ultimo": {
-                                "type": "object",
-                                "properties": {
-                                  "tipoDoc": { "type": "string", "example": "POR" },
-                                  "numDoc": { "type": "integer", "example": 456 },
-                                  "serie": { "type": "string", "example": "A" },
-                                  "data": { "type": "string", "format": "date-time" },
-                                  "total": { "type": "number", "format": "double", "example": 12000.00 }
-                                }
-                              }
+                              "total": { "type": "integer" },
+                              "valorTotal": { "type": "number" },
+                              "ultimo": { "type": "object", "nullable": true }
                             }
                           },
                           "compras": {
                             "type": "object",
                             "properties": {
-                              "total": { "type": "integer", "example": 0 },
-                              "valorTotal": { "type": "number", "format": "double", "example": 0 },
+                              "total": { "type": "integer" },
+                              "valorTotal": { "type": "number" },
                               "ultima": { "type": "object", "nullable": true }
                             }
                           }
@@ -559,74 +384,294 @@
                 }
               }
             }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          }
         }
       }
     },
-    "/api/clientes/{id}/orcamentos": {
+    "/api/clientes/{id}/comparacao-anual": {
       "get": {
         "tags": ["Clientes"],
-        "summary": "Orçamentos de um cliente",
-        "description": "Lista todos os orçamentos (POR) de um cliente. Use ano=2024 ou mes=2024-01 para filtrar por período.",
-        "operationId": "orcamentosCliente",
+        "operationId": "comparacaoAnualCliente",
+        "summary": "Faturacao deste ano vs ano passado",
+        "description": "Compara faturacao do ano pedido (default: corrente) com o ano anterior. Inclui variacao % e tendencia ('a comprar mais', 'a comprar menos', 'estavel').\n\nResponde a:\n- Historico de faturacao deste ano vs ano passado (esta a comprar mais ou menos?)\n- Comparar faturacao 2025 vs 2024 do cliente X?",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Código do cliente",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "ano",
-            "in": "query",
-            "description": "Ano específico (ex: 2024). Se fornecido, ignora periodo.",
-            "schema": { "type": "integer", "example": 2024 }
-          },
-          {
-            "name": "mes",
-            "in": "query",
-            "description": "Mês específico no formato YYYY-MM (ex: 2024-01). Tem prioridade sobre ano e periodo.",
-            "schema": { "type": "string", "example": "2024-01" }
-          },
-          {
-            "name": "periodo",
-            "in": "query",
-            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
-            "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número máximo de resultados",
-            "schema": { "type": "integer", "default": 50 }
-          }
+          { "$ref": "#/components/parameters/clienteId" },
+          { "name": "ano", "in": "query", "schema": { "type": "integer" }, "description": "Ano a comparar (default: ano corrente)" }
         ],
         "responses": {
           "200": {
-            "description": "Lista de orçamentos",
+            "description": "Comparacao anual",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "cliente": { "type": "string", "example": "C0001" },
-                    "periodo": { "type": "string", "example": "2024" },
-                    "total": { "type": "integer", "example": 5 },
+                    "cliente": { "type": "string" },
+                    "anoAtual": {
+                      "type": "object",
+                      "properties": {
+                        "ano": { "type": "integer" },
+                        "faturacao": { "type": "number" },
+                        "numDocumentos": { "type": "integer" },
+                        "margemMedia": { "type": "number" }
+                      }
+                    },
+                    "anoAnterior": {
+                      "type": "object",
+                      "properties": {
+                        "ano": { "type": "integer" },
+                        "faturacao": { "type": "number" },
+                        "numDocumentos": { "type": "integer" },
+                        "margemMedia": { "type": "number" }
+                      }
+                    },
+                    "variacaoPercent": { "type": "number" },
+                    "tendencia": { "type": "string", "enum": ["a comprar mais", "a comprar menos", "estavel"], "description": ">5% = a comprar mais, <-5% = a comprar menos, entre = estavel" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clientes/{id}/total-12-meses": {
+      "get": {
+        "tags": ["Clientes"],
+        "operationId": "total12MesesCliente",
+        "summary": "Total faturado nos ultimos 12 meses",
+        "description": "Total faturado nos ultimos 12 meses com evolucao mensal, margem media, e datas da primeira e ultima compra nesse periodo.\n\nResponde a:\n- Qual e o total faturado nos ultimos 12 meses do cliente?",
+        "parameters": [
+          { "$ref": "#/components/parameters/clienteId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Total 12 meses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cliente": { "type": "string" },
+                    "periodo": { "type": "string" },
+                    "totalFaturado": { "type": "number" },
+                    "margemMedia": { "type": "number" },
+                    "numDocumentos": { "type": "integer" },
+                    "primeiraCompra": { "type": "string", "format": "date", "nullable": true },
+                    "ultimaCompra": { "type": "string", "format": "date", "nullable": true },
+                    "evolucaoMensal": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ano": { "type": "integer" },
+                          "mes": { "type": "integer" },
+                          "total": { "type": "number" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clientes/{id}/maior-venda": {
+      "get": {
+        "tags": ["Clientes"],
+        "operationId": "maiorVendaCliente",
+        "summary": "Maior venda/compra do cliente",
+        "description": "Retorna a maior venda (por valor total) do cliente no periodo, incluindo os artigos dessa venda.\n\nResponde a:\n- Qual foi a maior venda deste cliente?\n- Maior compra em 2025?",
+        "parameters": [
+          { "$ref": "#/components/parameters/clienteId" },
+          { "$ref": "#/components/parameters/mes" },
+          { "$ref": "#/components/parameters/ano" },
+          { "$ref": "#/components/parameters/periodo" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Maior venda com artigos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cliente": { "type": "string" },
+                    "periodo": { "type": "string" },
+                    "maiorVenda": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "tipoDoc": { "type": "string" },
+                        "numDoc": { "type": "integer" },
+                        "data": { "type": "string", "format": "date" },
+                        "total": { "type": "number" },
+                        "artigos": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "artigo": { "type": "string" },
+                              "descricao": { "type": "string" },
+                              "quantidade": { "type": "number" },
+                              "precoUnitario": { "type": "number" },
+                              "totalLinha": { "type": "number" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clientes/{id}/taxa-conversao": {
+      "get": {
+        "tags": ["Clientes"],
+        "operationId": "taxaConversaoCliente",
+        "summary": "Orcamentos elaborados vs adjudicados",
+        "description": "Total de orcamentos (POR) vs adjudicados (fechados) no periodo. Mostra taxa de conversao e valores pendentes.\n\nResponde a:\n- Orcamentos elaborados vs adjudicados?\n- Qual a taxa de conversao de orcamentos?\n- Quanto valor em orcamentos esta pendente?",
+        "parameters": [
+          { "$ref": "#/components/parameters/clienteId" },
+          { "$ref": "#/components/parameters/mes" },
+          { "$ref": "#/components/parameters/ano" },
+          { "$ref": "#/components/parameters/periodo" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Taxa de conversao",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cliente": { "type": "string" },
+                    "periodo": { "type": "string" },
+                    "totalOrcamentos": { "type": "integer" },
+                    "adjudicados": { "type": "integer" },
+                    "pendentes": { "type": "integer" },
+                    "taxaConversao": { "type": "number", "description": "Percentagem de orcamentos adjudicados" },
+                    "valorTotalOrcamentos": { "type": "number" },
+                    "valorAdjudicado": { "type": "number" },
+                    "valorPendente": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clientes/segmentacao": {
+      "get": {
+        "tags": ["Clientes"],
+        "operationId": "segmentacaoClientes",
+        "summary": "Top clientes, crescimento e declinio",
+        "description": "Segmentacao de clientes: top por faturacao, quem mais cresceu, quem mais diminuiu, e inativos no periodo.\n\nResponde a:\n- Quais sao os top clientes de Braga?\n- Quem mais cresceu este trimestre e quem mais diminuiu?",
+        "parameters": [
+          { "$ref": "#/components/parameters/mes" },
+          { "$ref": "#/components/parameters/ano" },
+          { "$ref": "#/components/parameters/periodo" },
+          { "name": "zona", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por zona comercial" },
+          { "name": "localidade", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por localidade" },
+          { "$ref": "#/components/parameters/limitOptional" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Segmentacao",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "periodo": { "type": "string" },
+                    "topClientes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "cliente": { "type": "string" },
+                          "nome": { "type": "string" },
+                          "zona": { "type": "string" },
+                          "total": { "type": "number" }
+                        }
+                      }
+                    },
+                    "crescimento": {
+                      "type": "array",
+                      "description": "Clientes que mais cresceram (variacao positiva)",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "cliente": { "type": "string" },
+                          "nome": { "type": "string" },
+                          "periodoAtual": { "type": "number" },
+                          "periodoAnterior": { "type": "number" },
+                          "variacao": { "type": "number" }
+                        }
+                      }
+                    },
+                    "declinio": {
+                      "type": "array",
+                      "description": "Clientes que mais diminuiram (variacao negativa)"
+                    },
+                    "inativos": {
+                      "type": "array",
+                      "description": "Clientes sem compra ha mais de 6 meses"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clientes/top": {
+      "get": {
+        "tags": ["Clientes"],
+        "operationId": "topClientes",
+        "summary": "Ranking de clientes por faturacao",
+        "description": "Ranking dos melhores clientes por volume de faturacao. Filtravel por zona, localidade e periodo.\n\nResponde a:\n- Quais sao os top clientes de 2025?\n- Qual o cliente de maior volume este mes em Braga?",
+        "parameters": [
+          { "$ref": "#/components/parameters/mes" },
+          { "$ref": "#/components/parameters/ano" },
+          { "$ref": "#/components/parameters/periodo" },
+          { "name": "zona", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por zona" },
+          { "name": "localidade", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por localidade" },
+          { "$ref": "#/components/parameters/limitOptional" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranking",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "periodo": { "type": "string" },
+                    "total": { "type": "integer" },
                     "data": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "TipoDoc": { "type": "string", "example": "POR" },
-                          "NumDoc": { "type": "integer", "example": 123 },
-                          "Serie": { "type": "string", "example": "A" },
-                          "Data": { "type": "string", "format": "date-time" },
-                          "total": { "type": "number", "format": "double", "example": 15000.00 },
-                          "observacoes": { "type": "string" },
-                          "fechado": { "type": "integer", "example": 0 }
+                          "cliente": { "type": "string" },
+                          "nome": { "type": "string" },
+                          "zona": { "type": "string" },
+                          "zonaDescricao": { "type": "string" },
+                          "localidade": { "type": "string" },
+                          "TipoCli": { "type": "string" },
+                          "totalFaturado": { "type": "number" },
+                          "margemMedia": { "type": "number" },
+                          "numDocumentos": { "type": "integer" },
+                          "ultimaCompra": { "type": "string", "format": "date" }
                         }
                       }
                     }
@@ -634,178 +679,52 @@
                 }
               }
             }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          }
         }
       }
     },
-    "/api/clientes/{id}": {
+    "/api/clientes/inativos": {
       "get": {
         "tags": ["Clientes"],
-        "summary": "Detalhes do cliente",
-        "description": "Retorna informação detalhada de um cliente específico incluindo dados cadastrais, contactos e condições comerciais.",
-        "operationId": "detalheCliente",
+        "operationId": "clientesInativos",
+        "summary": "Clientes que pararam de comprar",
+        "description": "Clientes que tinham compras regulares (minimo N compras) mas pararam ha mais de N meses. Mostra historico de compras, faturacao anterior e dias sem compra.\n\nResponde a:\n- Que clientes nao compram ha mais de 6 meses?\n- Clientes inativos que compravam regularmente?",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Código do cliente",
-            "schema": { "type": "string" }
-          }
+          { "name": "meses", "in": "query", "schema": { "type": "integer", "default": 6 }, "description": "Meses sem compra (default 6)" },
+          { "name": "minCompras", "in": "query", "schema": { "type": "integer", "default": 3 }, "description": "Minimo de compras no historico (default 3)" },
+          { "$ref": "#/components/parameters/limitOptional" }
         ],
         "responses": {
           "200": {
-            "description": "Detalhes do cliente",
+            "description": "Clientes inativos",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": { "$ref": "#/components/schemas/ClienteDetalhe" }
-                  }
-                }
-              }
-            }
-          },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/api/clientes/{id}/perfil-financeiro": {
-      "get": {
-        "tags": ["Clientes"],
-        "summary": "Perfil financeiro do cliente",
-        "description": "Retorna o perfil financeiro do cliente incluindo crédito disponível, dívida atual e valores em atraso.",
-        "operationId": "perfilFinanceiroCliente",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Código do cliente",
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Perfil financeiro",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
+                    "filtros": {
                       "type": "object",
                       "properties": {
-                        "cliente": { "type": "string", "example": "C0001" },
-                        "nome": { "type": "string", "example": "Construções Silva Lda" },
-                        "limiteCredito": { "type": "number", "format": "double", "example": 50000.00 },
-                        "creditoDisponivel": { "type": "number", "format": "double", "example": 32500.00 },
-                        "dividaTotal": { "type": "number", "format": "double", "example": 17500.00 },
-                        "dividaVencida": { "type": "number", "format": "double", "example": 3200.00 },
-                        "diasAtrasoMedio": { "type": "integer", "example": 15 },
-                        "documentosPendentes": { "type": "integer", "example": 4 },
-                        "ultimoPagamento": { "type": "string", "format": "date", "example": "2026-02-28" }
+                        "mesesInativo": { "type": "integer" },
+                        "minCompras": { "type": "integer" }
                       }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/api/clientes/{id}/historico": {
-      "get": {
-        "tags": ["Clientes"],
-        "summary": "Histórico de faturação do cliente",
-        "description": "Retorna o histórico de faturação do cliente incluindo acumulado do ano (YTD), comparação ano-a-ano (YoY), margem, evolução mensal e última compra com artigos comprados.",
-        "operationId": "historicoCliente",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Código do cliente",
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Histórico de faturação",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
+                    },
+                    "total": { "type": "integer" },
                     "data": {
-                      "type": "object",
-                      "properties": {
-                        "cliente": { "type": "string", "example": "C0001" },
-                        "nome": { "type": "string", "example": "Construções Silva Lda" },
-                        "ytd": {
-                          "type": "object",
-                          "properties": {
-                            "faturacao": { "type": "number", "format": "double", "example": 85200.00 },
-                            "margem": { "type": "number", "format": "double", "example": 22.5 },
-                            "numDocumentos": { "type": "integer", "example": 34 }
-                          }
-                        },
-                        "yoy": {
-                          "type": "object",
-                          "properties": {
-                            "faturacaoAnoAnterior": { "type": "number", "format": "double", "example": 78000.00 },
-                            "variacao": { "type": "number", "format": "double", "example": 9.2 },
-                            "variacaoAbsoluta": { "type": "number", "format": "double", "example": 7200.00 }
-                          }
-                        },
-                        "ultimaCompra": {
-                          "type": "object",
-                          "description": "Última fatura do cliente com artigos comprados",
-                          "properties": {
-                            "tipoDoc": { "type": "string", "example": "FA" },
-                            "numDoc": { "type": "integer", "example": 125 },
-                            "serie": { "type": "string", "example": "A" },
-                            "data": { "type": "string", "format": "date-time" },
-                            "total": { "type": "number", "format": "double", "example": 2350.00 },
-                            "artigos": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "artigo": { "type": "string", "example": "CIM001" },
-                                  "descricao": { "type": "string", "example": "Cimento Portland CEM II" },
-                                  "quantidade": { "type": "number", "format": "double", "example": 50 },
-                                  "unidade": { "type": "string", "example": "TON" },
-                                  "precoUnitario": { "type": "number", "format": "double", "example": 47.00 },
-                                  "totalLinha": { "type": "number", "format": "double", "example": 2350.00 }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "evolucaoMensal": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "mes": { "type": "integer", "example": 1 },
-                              "ano": { "type": "integer", "example": 2026 },
-                              "faturacao": { "type": "number", "format": "double", "example": 12500.00 },
-                              "margem": { "type": "number", "format": "double", "example": 21.3 }
-                            }
-                          }
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "cliente": { "type": "string" },
+                          "nome": { "type": "string" },
+                          "zona": { "type": "string" },
+                          "localidade": { "type": "string" },
+                          "totalComprasHistorico": { "type": "integer" },
+                          "totalFaturadoHistorico": { "type": "number" },
+                          "ultimaCompra": { "type": "string", "format": "date" },
+                          "diasSemCompra": { "type": "integer" },
+                          "comprasAnoAnterior": { "type": "integer" },
+                          "faturacaoAnoAnterior": { "type": "number" }
                         }
                       }
                     }
@@ -813,134 +732,47 @@
                 }
               }
             }
-          },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          }
         }
       }
     },
     "/api/artigos": {
       "get": {
         "tags": ["Artigos"],
-        "summary": "Listar artigos",
-        "description": "Retorna lista paginada de artigos com pesquisa e filtros por família e subfamília.",
         "operationId": "listarArtigos",
+        "summary": "Listar artigos",
+        "description": "Lista artigos com pesquisa por nome, codigo ou codigo de barras. Filtravel por familia e subfamilia.",
         "parameters": [
-          {
-            "name": "search",
-            "in": "query",
-            "description": "Pesquisa por código ou descrição do artigo",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "familia",
-            "in": "query",
-            "description": "Filtrar por família de artigos",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "subfamilia",
-            "in": "query",
-            "description": "Filtrar por subfamília de artigos",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "description": "Número da página (começa em 1)",
-            "schema": { "type": "integer", "default": 1, "minimum": 1 }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número de resultados por página",
-            "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 500 }
-          }
+          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Pesquisa por codigo, descricao ou codigo de barras" },
+          { "name": "familia", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por familia" },
+          { "name": "subfamilia", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por subfamilia" },
+          { "$ref": "#/components/parameters/page" },
+          { "$ref": "#/components/parameters/limit" }
         ],
         "responses": {
           "200": {
-            "description": "Lista de artigos",
+            "description": "Lista paginada de artigos",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/ArtigoResumo" }
-                    },
-                    "pagination": { "$ref": "#/components/schemas/Pagination" }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/api/artigos/top": {
-      "get": {
-        "tags": ["Artigos"],
-        "summary": "Top artigos mais vendidos",
-        "description": "Ranking dos artigos mais vendidos por quantidade ou valor no período especificado.",
-        "operationId": "topArtigos",
-        "parameters": [
-          {
-            "name": "ano",
-            "in": "query",
-            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
-            "schema": { "type": "integer", "example": 2025 }
-          },
-          {
-            "name": "mes",
-            "in": "query",
-            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
-            "schema": { "type": "string", "example": "2025-03" }
-          },
-          {
-            "name": "periodo",
-            "in": "query",
-            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
-            "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
-          },
-          {
-            "name": "familia",
-            "in": "query",
-            "description": "Filtrar por família de artigos",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número de artigos no ranking",
-            "schema": { "type": "integer", "default": 10 }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Ranking de artigos",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
+                    "page": { "type": "integer" },
+                    "limit": { "type": "integer" },
+                    "total": { "type": "integer" },
                     "data": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "posicao": { "type": "integer", "example": 1 },
-                          "artigo": { "type": "string", "example": "CIM001" },
-                          "descricao": { "type": "string", "example": "Cimento Portland CEM II 42.5R" },
-                          "familia": { "type": "string", "example": "Cimentos" },
-                          "quantidadeVendida": { "type": "number", "format": "double", "example": 15000.0 },
-                          "faturacao": { "type": "number", "format": "double", "example": 180000.00 },
-                          "percentagemTotal": { "type": "number", "format": "double", "example": 15.3 }
+                          "Artigo": { "type": "string" },
+                          "Descricao": { "type": "string" },
+                          "Familia": { "type": "string" },
+                          "FamiliaDescricao": { "type": "string" },
+                          "SubFamilia": { "type": "string" },
+                          "UnidadeVenda": { "type": "string" },
+                          "STKActual": { "type": "number" },
+                          "PCMedio": { "type": "number" }
                         }
                       }
                     }
@@ -948,91 +780,67 @@
                 }
               }
             }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          }
         }
       }
     },
     "/api/artigos/{id}": {
       "get": {
         "tags": ["Artigos"],
-        "summary": "Detalhes do artigo",
-        "description": "Retorna informação detalhada de um artigo incluindo preços, stock e dados técnicos.",
         "operationId": "detalheArtigo",
+        "summary": "Detalhes de um artigo",
+        "description": "Dados completos do artigo incluindo precos (PVP1-6), stock por armazem e informacao tecnica.",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Código do artigo",
-            "schema": { "type": "string" }
-          }
+          { "$ref": "#/components/parameters/artigoId" }
         ],
         "responses": {
-          "200": {
-            "description": "Detalhes do artigo",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": { "$ref": "#/components/schemas/ArtigoDetalhe" }
-                  }
-                }
-              }
-            }
-          },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": { "description": "Dados do artigo com precos e stock" },
+          "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
     },
     "/api/artigos/{id}/stock": {
       "get": {
         "tags": ["Artigos"],
-        "summary": "Stock do artigo por armazém",
-        "description": "Retorna a decomposição do stock do artigo por armazém e estado.",
         "operationId": "stockArtigo",
+        "summary": "Stock disponivel de um artigo",
+        "description": "Stock total, disponivel, reservado e bloqueado por armazem e estado.\n\nResponde a:\n- Quanto stock disponivel existe deste artigo?\n- Em que armazens esta?",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Código do artigo",
-            "schema": { "type": "string" }
-          }
+          { "$ref": "#/components/parameters/artigoId" }
         ],
         "responses": {
           "200": {
-            "description": "Stock por armazém",
+            "description": "Stock detalhado",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "artigo": { "type": "string", "example": "CIM001" },
-                        "descricao": { "type": "string", "example": "Cimento Portland CEM II 42.5R" },
-                        "stockTotal": { "type": "number", "format": "double", "example": 5200.0 },
-                        "unidade": { "type": "string", "example": "TON" },
-                        "armazens": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "armazem": { "type": "string", "example": "A01" },
-                              "descricao": { "type": "string", "example": "Armazém Principal" },
-                              "stockDisponivel": { "type": "number", "format": "double", "example": 3200.0 },
-                              "stockReservado": { "type": "number", "format": "double", "example": 450.0 },
-                              "stockEncomendado": { "type": "number", "format": "double", "example": 1000.0 }
-                            }
-                          }
+                    "artigo": { "type": "string" },
+                    "descricao": { "type": "string" },
+                    "stockGlobal": { "type": "number", "description": "Stock total atual" },
+                    "stockMinimo": { "type": "number" },
+                    "stockMaximo": { "type": "number" },
+                    "porArmazem": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "armazem": { "type": "string" },
+                          "disponivel": { "type": "number" },
+                          "reservado": { "type": "number" },
+                          "bloqueado": { "type": "number" },
+                          "total": { "type": "number" }
+                        }
+                      }
+                    },
+                    "porEstado": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "estado": { "type": "string" },
+                          "quantidade": { "type": "number" }
                         }
                       }
                     }
@@ -1041,69 +849,69 @@
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
     },
     "/api/artigos/{id}/cliente/{clienteId}": {
       "get": {
         "tags": ["Artigos"],
-        "summary": "Preço e histórico do artigo para cliente",
-        "description": "Retorna preços específicos e histórico de compras de um artigo para um cliente específico.",
-        "operationId": "artigoCliente",
+        "operationId": "artigoInfoCliente",
+        "summary": "Preco e historico de artigo para um cliente",
+        "description": "Preco especifico para o cliente (PVP por TipoPrec + desconto), peso, volume, ultima compra e historico de quantidades.\n\nResponde a:\n- Qual o preco deste artigo para este cliente?\n- Quanto comprou este cliente deste artigo?",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Código do artigo",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "clienteId",
-            "in": "path",
-            "required": true,
-            "description": "Código do cliente",
-            "schema": { "type": "string" }
-          }
+          { "$ref": "#/components/parameters/artigoId" },
+          { "name": "clienteId", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Codigo do cliente" }
         ],
         "responses": {
           "200": {
-            "description": "Preço e histórico artigo-cliente",
+            "description": "Info artigo-cliente",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
+                    "artigo": { "type": "string" },
+                    "descricao": { "type": "string" },
+                    "peso": { "type": "number" },
+                    "volume": { "type": "number" },
+                    "unidadeVenda": { "type": "string" },
+                    "precos": {
+                      "type": "object",
+                      "description": "PVP1 a PVP6",
+                      "properties": {
+                        "pvp1": { "type": "number" },
+                        "pvp2": { "type": "number" },
+                        "pvp3": { "type": "number" },
+                        "pvp4": { "type": "number" },
+                        "pvp5": { "type": "number" },
+                        "pvp6": { "type": "number" }
+                      }
+                    },
+                    "cliente": {
                       "type": "object",
                       "properties": {
-                        "artigo": { "type": "string", "example": "CIM001" },
-                        "descricaoArtigo": { "type": "string", "example": "Cimento Portland CEM II 42.5R" },
-                        "cliente": { "type": "string", "example": "C0001" },
-                        "nomeCliente": { "type": "string", "example": "Construções Silva Lda" },
-                        "precoEspecial": { "type": "number", "format": "double", "example": 11.50 },
-                        "precoTabela": { "type": "number", "format": "double", "example": 12.00 },
-                        "descontoCliente": { "type": "number", "format": "double", "example": 4.2 },
-                        "ultimaCompra": { "type": "string", "format": "date", "example": "2026-03-01" },
-                        "quantidadeTotal": { "type": "number", "format": "double", "example": 850.0 },
-                        "faturacaoTotal": { "type": "number", "format": "double", "example": 9775.00 },
-                        "historico": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "data": { "type": "string", "format": "date", "example": "2026-03-01" },
-                              "documento": { "type": "string", "example": "FA 2026/125" },
-                              "quantidade": { "type": "number", "format": "double", "example": 50.0 },
-                              "precoUnitario": { "type": "number", "format": "double", "example": 11.50 },
-                              "total": { "type": "number", "format": "double", "example": 575.00 }
-                            }
-                          }
-                        }
+                        "id": { "type": "string" },
+                        "nome": { "type": "string" },
+                        "tipoPreco": { "type": "string" },
+                        "descontoCliente": { "type": "number" },
+                        "precoFinal": { "type": "number", "description": "PVP aplicavel ao cliente com desconto" }
+                      }
+                    },
+                    "ultimaCompraCliente": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "data": { "type": "string", "format": "date" },
+                        "quantidade": { "type": "number" },
+                        "precoUnit": { "type": "number" }
+                      }
+                    },
+                    "historicoQuantidades": {
+                      "type": "object",
+                      "properties": {
+                        "ultimos12Meses": { "type": "number" },
+                        "esteAno": { "type": "number" }
                       }
                     }
                   }
@@ -1111,71 +919,92 @@
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/artigos/top": {
+      "get": {
+        "tags": ["Artigos"],
+        "operationId": "topArtigos",
+        "summary": "Top artigos mais vendidos",
+        "description": "Ranking dos artigos mais vendidos por valor total no periodo. Filtravel por familia.\n\nResponde a:\n- Top artigos mais vendidos em 2025?\n- Top artigos da familia X em marco 2025?",
+        "parameters": [
+          { "$ref": "#/components/parameters/mes" },
+          { "$ref": "#/components/parameters/ano" },
+          { "$ref": "#/components/parameters/periodo" },
+          { "name": "familia", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por familia de artigos" },
+          { "$ref": "#/components/parameters/limitOptional" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Top artigos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "periodo": { "type": "string" },
+                    "top": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "Artigo": { "type": "string" },
+                          "descricao": { "type": "string" },
+                          "familia": { "type": "string" },
+                          "familiaDesc": { "type": "string" },
+                          "quantidadeVendida": { "type": "number" },
+                          "valorTotal": { "type": "number" },
+                          "margemMedia": { "type": "number" },
+                          "numDocumentos": { "type": "integer" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/artigos/{id}/top-clientes": {
       "get": {
         "tags": ["Artigos"],
-        "summary": "Top compradores do artigo",
-        "description": "Ranking dos maiores compradores de um artigo específico.",
         "operationId": "topClientesArtigo",
+        "summary": "Que clientes mais compram este artigo",
+        "description": "Ranking dos clientes que mais compram um artigo especifico no periodo.\n\nResponde a:\n- Qual o cliente que mais compra o artigo X?\n- Top compradores deste artigo em 2025?",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Código do artigo",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "ano",
-            "in": "query",
-            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
-            "schema": { "type": "integer", "example": 2025 }
-          },
-          {
-            "name": "mes",
-            "in": "query",
-            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
-            "schema": { "type": "string", "example": "2025-03" }
-          },
-          {
-            "name": "periodo",
-            "in": "query",
-            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
-            "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número de clientes no ranking",
-            "schema": { "type": "integer", "default": 10 }
-          }
+          { "$ref": "#/components/parameters/artigoId" },
+          { "$ref": "#/components/parameters/mes" },
+          { "$ref": "#/components/parameters/ano" },
+          { "$ref": "#/components/parameters/periodo" },
+          { "$ref": "#/components/parameters/limitOptional" }
         ],
         "responses": {
           "200": {
-            "description": "Ranking de compradores",
+            "description": "Top clientes do artigo",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
+                    "artigo": { "type": "string" },
+                    "descricao": { "type": "string" },
+                    "periodo": { "type": "string" },
+                    "topClientes": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "posicao": { "type": "integer", "example": 1 },
-                          "cliente": { "type": "string", "example": "C0001" },
-                          "nome": { "type": "string", "example": "Construções Silva Lda" },
-                          "quantidade": { "type": "number", "format": "double", "example": 850.0 },
-                          "faturacao": { "type": "number", "format": "double", "example": 9775.00 },
-                          "percentagemTotal": { "type": "number", "format": "double", "example": 12.8 }
+                          "cliente": { "type": "string" },
+                          "nome": { "type": "string" },
+                          "zona": { "type": "string" },
+                          "quantidadeTotal": { "type": "number" },
+                          "valorTotal": { "type": "number" },
+                          "numCompras": { "type": "integer" },
+                          "ultimaCompra": { "type": "string", "format": "date" }
                         }
                       }
                     }
@@ -1184,67 +1013,64 @@
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
     },
     "/api/comercial/resumo": {
       "get": {
         "tags": ["Comercial"],
-        "summary": "Resumo comercial",
-        "description": "Resumo de vendas do mês e ano corrente com comparações ao período anterior.",
         "operationId": "resumoComercial",
+        "summary": "Resumo vendas e margem (mes/ano)",
+        "description": "Total de vendas e margem do mes e ano correntes com comparacao ao periodo anterior e ticket medio.",
         "parameters": [
-          {
-            "name": "vendedor",
-            "in": "query",
-            "description": "Filtrar por código do vendedor",
-            "schema": { "type": "string" }
-          }
+          { "name": "vendedor", "in": "query", "schema": { "type": "string" }, "description": "Filtrar por vendedor especifico" }
         ],
         "responses": {
           "200": {
-            "description": "Resumo de vendas",
+            "description": "Resumo comercial",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
+                    "mes": {
                       "type": "object",
                       "properties": {
-                        "mesAtual": {
-                          "type": "object",
-                          "properties": {
-                            "faturacao": { "type": "number", "format": "double", "example": 245000.00 },
-                            "numDocumentos": { "type": "integer", "example": 128 },
-                            "numClientes": { "type": "integer", "example": 45 },
-                            "ticketMedio": { "type": "number", "format": "double", "example": 1914.06 }
-                          }
-                        },
+                        "periodo": { "type": "string" },
+                        "totalVendas": { "type": "number" },
+                        "margemTotal": { "type": "number" },
+                        "margemPercent": { "type": "number" },
+                        "numDocumentos": { "type": "integer" },
+                        "ticketMedio": { "type": "number" }
+                      }
+                    },
+                    "ano": {
+                      "type": "object",
+                      "properties": {
+                        "periodo": { "type": "string" },
+                        "totalVendas": { "type": "number" },
+                        "margemTotal": { "type": "number" },
+                        "margemPercent": { "type": "number" },
+                        "numDocumentos": { "type": "integer" },
+                        "ticketMedio": { "type": "number" }
+                      }
+                    },
+                    "comparacao": {
+                      "type": "object",
+                      "properties": {
                         "mesAnterior": {
                           "type": "object",
                           "properties": {
-                            "faturacao": { "type": "number", "format": "double", "example": 230000.00 },
-                            "variacao": { "type": "number", "format": "double", "example": 6.5 }
+                            "totalVendas": { "type": "number" },
+                            "variacao": { "type": "number" }
                           }
                         },
-                        "acumuladoAno": {
+                        "anoAnterior": {
                           "type": "object",
                           "properties": {
-                            "faturacao": { "type": "number", "format": "double", "example": 720000.00 },
-                            "faturacaoAnoAnterior": { "type": "number", "format": "double", "example": 680000.00 },
-                            "variacao": { "type": "number", "format": "double", "example": 5.9 }
-                          }
-                        },
-                        "mesHomologo": {
-                          "type": "object",
-                          "properties": {
-                            "faturacao": { "type": "number", "format": "double", "example": 225000.00 },
-                            "variacao": { "type": "number", "format": "double", "example": 8.9 }
+                            "totalVendas": { "type": "number" },
+                            "variacao": { "type": "number" }
                           }
                         }
                       }
@@ -1253,448 +1079,106 @@
                 }
               }
             }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          }
         }
       }
     },
     "/api/comercial/por-localidade": {
       "get": {
         "tags": ["Comercial"],
-        "summary": "Vendas por localidade",
-        "description": "Análise de vendas agrupadas por localidade/zona geográfica.",
         "operationId": "vendasPorLocalidade",
+        "summary": "Vendas por localidade/zona",
+        "description": "Vendas agrupadas por localidade com total, margem e numero de clientes.",
         "parameters": [
-          {
-            "name": "ano",
-            "in": "query",
-            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
-            "schema": { "type": "integer", "example": 2025 }
-          },
-          {
-            "name": "mes",
-            "in": "query",
-            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
-            "schema": { "type": "string", "example": "2025-03" }
-          },
-          {
-            "name": "periodo",
-            "in": "query",
-            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
-            "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número máximo de localidades",
-            "schema": { "type": "integer", "default": 20 }
-          }
+          { "$ref": "#/components/parameters/mes" },
+          { "$ref": "#/components/parameters/ano" },
+          { "$ref": "#/components/parameters/periodo" },
+          { "$ref": "#/components/parameters/limitOptional" }
         ],
         "responses": {
-          "200": {
-            "description": "Vendas por localidade",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "localidade": { "type": "string", "example": "Braga" },
-                          "zona": { "type": "string", "example": "Norte" },
-                          "faturacao": { "type": "number", "format": "double", "example": 185000.00 },
-                          "numClientes": { "type": "integer", "example": 23 },
-                          "numDocumentos": { "type": "integer", "example": 156 },
-                          "percentagemTotal": { "type": "number", "format": "double", "example": 14.2 }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": { "description": "Vendas por localidade" }
         }
       }
     },
     "/api/comercial/clientes-risco": {
       "get": {
         "tags": ["Comercial"],
-        "summary": "Clientes em risco",
-        "description": "Identificação de clientes em risco de perda por inatividade ou queda significativa de faturação.",
         "operationId": "clientesRisco",
+        "summary": "Clientes em risco: inativos, em queda e com divida",
+        "description": "Tres listas: clientes inativos (sem compra em N dias), clientes em queda (diminuicao >N% vs ano passado), e clientes com divida vencida.",
         "parameters": [
-          {
-            "name": "diasInativo",
-            "in": "query",
-            "description": "Número mínimo de dias sem compras para considerar inativo",
-            "schema": { "type": "integer", "default": 90 }
-          },
-          {
-            "name": "quedaMinima",
-            "in": "query",
-            "description": "Percentagem mínima de queda de faturação para considerar risco",
-            "schema": { "type": "number", "format": "double", "default": 30 }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número máximo de resultados",
-            "schema": { "type": "integer", "default": 20 }
-          }
+          { "name": "diasInativo", "in": "query", "schema": { "type": "integer", "default": 180 }, "description": "Dias sem compra para considerar inativo" },
+          { "name": "quedaMinima", "in": "query", "schema": { "type": "integer", "default": 30 }, "description": "Queda minima % para incluir" },
+          { "$ref": "#/components/parameters/limitOptional" }
         ],
         "responses": {
-          "200": {
-            "description": "Lista de clientes em risco",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "cliente": { "type": "string", "example": "C0045" },
-                          "nome": { "type": "string", "example": "Obras Públicas do Minho SA" },
-                          "tipoRisco": { "type": "string", "enum": ["inatividade", "queda_faturacao", "ambos"], "example": "queda_faturacao" },
-                          "diasSemCompra": { "type": "integer", "example": 45 },
-                          "faturacaoAtual": { "type": "number", "format": "double", "example": 12000.00 },
-                          "faturacaoAnterior": { "type": "number", "format": "double", "example": 35000.00 },
-                          "quedaPercentual": { "type": "number", "format": "double", "example": -65.7 },
-                          "ultimaCompra": { "type": "string", "format": "date", "example": "2026-01-24" }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": { "description": "Clientes em risco (inativos, emQueda, comDividaVencida)" }
         }
       }
     },
     "/api/comercial/recomendacoes/{clienteId}": {
       "get": {
         "tags": ["Comercial"],
-        "summary": "Recomendações de produtos",
-        "description": "Recomendações de produtos para um cliente baseadas no histórico de compras e padrões de clientes similares.",
-        "operationId": "recomendacoesProdutos",
+        "operationId": "recomendacoes",
+        "summary": "Recomendacoes de cross-selling",
+        "description": "Produtos que clientes semelhantes (mesma zona, artigos comuns) compram mas este cliente nao. Util para sugestoes de venda.",
         "parameters": [
-          {
-            "name": "clienteId",
-            "in": "path",
-            "required": true,
-            "description": "Código do cliente",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número máximo de recomendações",
-            "schema": { "type": "integer", "default": 10 }
-          }
+          { "name": "clienteId", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Codigo do cliente" },
+          { "$ref": "#/components/parameters/limitOptional" }
         ],
         "responses": {
-          "200": {
-            "description": "Lista de recomendações",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "artigo": { "type": "string", "example": "ADT005" },
-                          "descricao": { "type": "string", "example": "Aditivo Plastificante Premium" },
-                          "familia": { "type": "string", "example": "Aditivos" },
-                          "motivo": { "type": "string", "example": "Comprado por 78% dos clientes similares" },
-                          "confianca": { "type": "number", "format": "double", "example": 0.85 },
-                          "precoSugerido": { "type": "number", "format": "double", "example": 8.50 }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": { "description": "Lista de recomendacoes com razao e preco medio" }
         }
       }
     },
     "/api/comercial/vendedores": {
       "get": {
         "tags": ["Comercial"],
-        "summary": "Performance dos vendedores",
-        "description": "Análise de performance de vendedores com métricas de faturação, clientes e artigos.",
         "operationId": "performanceVendedores",
+        "summary": "Performance por vendedor",
+        "description": "Ranking de vendedores por total de vendas, margem, numero de clientes e ticket medio.",
         "parameters": [
-          {
-            "name": "ano",
-            "in": "query",
-            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
-            "schema": { "type": "integer", "example": 2025 }
-          },
-          {
-            "name": "mes",
-            "in": "query",
-            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
-            "schema": { "type": "string", "example": "2025-03" }
-          },
-          {
-            "name": "periodo",
-            "in": "query",
-            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
-            "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Número máximo de vendedores",
-            "schema": { "type": "integer", "default": 20 }
-          }
+          { "$ref": "#/components/parameters/mes" },
+          { "$ref": "#/components/parameters/ano" },
+          { "$ref": "#/components/parameters/periodo" },
+          { "$ref": "#/components/parameters/limitOptional" }
         ],
         "responses": {
-          "200": {
-            "description": "Performance dos vendedores",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "vendedor": { "type": "string", "example": "V001" },
-                          "nome": { "type": "string", "example": "João Santos" },
-                          "faturacao": { "type": "number", "format": "double", "example": 320000.00 },
-                          "numClientes": { "type": "integer", "example": 35 },
-                          "numDocumentos": { "type": "integer", "example": 210 },
-                          "ticketMedio": { "type": "number", "format": "double", "example": 1523.81 },
-                          "variacao": { "type": "number", "format": "double", "example": 7.3 },
-                          "percentagemTotal": { "type": "number", "format": "double", "example": 22.1 }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": { "description": "Performance por vendedor" }
         }
       }
     },
     "/api/comercial/evolucao-mensal": {
       "get": {
         "tags": ["Comercial"],
-        "summary": "Evolução mensal ano-a-ano",
-        "description": "Evolução mensal da faturação com comparação ao ano anterior (YoY).",
         "operationId": "evolucaoMensal",
+        "summary": "Evolucao mensal com comparacao ano anterior",
+        "description": "Vendas mes a mes do ano pedido com comparacao ao ano anterior. Mostra variacao % por mes.",
         "parameters": [
-          {
-            "name": "ano",
-            "in": "query",
-            "description": "Ano de referência para a análise",
-            "schema": { "type": "integer", "example": 2026 }
-          }
+          { "name": "ano", "in": "query", "schema": { "type": "integer" }, "description": "Ano (default: corrente)" }
         ],
         "responses": {
-          "200": {
-            "description": "Evolução mensal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "ano": { "type": "integer", "example": 2026 },
-                        "meses": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "mes": { "type": "integer", "example": 1 },
-                              "nomeMes": { "type": "string", "example": "Janeiro" },
-                              "faturacao": { "type": "number", "format": "double", "example": 225000.00 },
-                              "faturacaoAnoAnterior": { "type": "number", "format": "double", "example": 210000.00 },
-                              "variacao": { "type": "number", "format": "double", "example": 7.1 },
-                              "numDocumentos": { "type": "integer", "example": 145 },
-                              "numClientes": { "type": "integer", "example": 52 }
-                            }
-                          }
-                        },
-                        "totalAno": { "type": "number", "format": "double", "example": 720000.00 },
-                        "totalAnoAnterior": { "type": "number", "format": "double", "example": 680000.00 },
-                        "variacaoAnual": { "type": "number", "format": "double", "example": 5.9 }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": { "description": "12 meses com atual vs anterior e variacao" }
         }
       }
     },
     "/api/health": {
       "get": {
-        "tags": ["Utilitários"],
-        "summary": "Health check",
-        "description": "Verifica o estado de saúde da API e conectividade à base de dados.",
+        "tags": ["Utilitarios"],
         "operationId": "healthCheck",
-        "security": [],
+        "summary": "Estado da API e base de dados",
+        "description": "Verifica se a API e a ligacao a base de dados estao operacionais.",
         "responses": {
-          "200": {
-            "description": "API operacional",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": { "type": "string", "example": "ok" },
-                    "timestamp": { "type": "string", "format": "date-time", "example": "2026-03-10T14:30:00Z" },
-                    "database": { "type": "string", "example": "connected" },
-                    "version": { "type": "string", "example": "4.0.0" }
-                  }
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "API indisponível",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": { "type": "string", "example": "error" },
-                    "message": { "type": "string", "example": "Database connection failed" }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/health/tables": {
-      "get": {
-        "tags": ["Utilitários"],
-        "summary": "Listar tabelas da base de dados",
-        "description": "Retorna a lista de tabelas disponíveis na base de dados do ERP Primavera.",
-        "operationId": "listarTabelas",
-        "responses": {
-          "200": {
-            "description": "Lista de tabelas",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "nome": { "type": "string", "example": "Clientes" },
-                          "tipo": { "type": "string", "example": "TABLE" },
-                          "numRegistos": { "type": "integer", "example": 1250 }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
-        }
-      }
-    },
-    "/api/health/tables/{nome}/columns": {
-      "get": {
-        "tags": ["Utilitários"],
-        "summary": "Colunas de uma tabela",
-        "description": "Retorna a lista de colunas e tipos de dados de uma tabela específica.",
-        "operationId": "colunasTabela",
-        "parameters": [
-          {
-            "name": "nome",
-            "in": "path",
-            "required": true,
-            "description": "Nome da tabela",
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Colunas da tabela",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "tabela": { "type": "string", "example": "Clientes" },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "coluna": { "type": "string", "example": "Cliente" },
-                          "tipo": { "type": "string", "example": "nvarchar(15)" },
-                          "nullable": { "type": "boolean", "example": false },
-                          "chave": { "type": "boolean", "example": true }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": { "description": "API e BD operacionais" }
         }
       }
     },
     "/api/query": {
       "post": {
-        "tags": ["Utilitários"],
-        "summary": "Executar query SQL",
-        "description": "Executa uma query SQL direta na base de dados do ERP Primavera. Usar com cuidado - apenas queries SELECT são permitidas.",
+        "tags": ["Utilitarios"],
         "operationId": "executarQuery",
+        "summary": "Executar query SQL read-only",
+        "description": "Executa uma query SQL SELECT na base de dados. Apenas leitura.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1703,276 +1187,107 @@
                 "type": "object",
                 "required": ["sql"],
                 "properties": {
-                  "sql": {
-                    "type": "string",
-                    "description": "Query SQL a executar (apenas SELECT)",
-                    "example": "SELECT TOP 10 Cliente, Nome, Zona FROM Clientes WHERE Zona = @zona"
-                  },
-                  "params": {
-                    "type": "object",
-                    "description": "Parâmetros da query (previne SQL injection)",
-                    "additionalProperties": true,
-                    "example": { "zona": "Norte" }
-                  }
+                  "sql": { "type": "string", "description": "Query SQL SELECT" },
+                  "params": { "type": "object", "description": "Parametros nomeados" }
                 }
               }
             }
           }
         },
         "responses": {
-          "200": {
-            "description": "Resultado da query",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                      }
-                    },
-                    "rowCount": { "type": "integer", "example": 10 },
-                    "executionTime": { "type": "string", "example": "45ms" }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Query inválida",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": false },
-                    "error": { "type": "string", "example": "Apenas queries SELECT são permitidas" }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": { "description": "Resultado da query" }
         }
       }
     },
     "/api/copilot/context": {
       "get": {
-        "tags": ["Utilitários"],
-        "summary": "Contexto da API para LLMs",
-        "description": "Retorna o contexto completo da API formatado para consumo por Large Language Models, incluindo endpoints disponíveis, schemas e exemplos.",
+        "tags": ["Utilitarios"],
         "operationId": "copilotContext",
+        "summary": "Contexto LLM com todos os endpoints",
+        "description": "Retorna descricao da API, todos os endpoints disponiveis e exemplos de perguntas que cada um responde. Usar como primeiro passo para orientar o LLM.",
         "responses": {
-          "200": {
-            "description": "Contexto da API",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "apiVersion": { "type": "string", "example": "4.0.0" },
-                        "description": { "type": "string", "example": "API REST otimizada para consumo por LLMs" },
-                        "endpoints": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "method": { "type": "string", "example": "GET" },
-                              "path": { "type": "string", "example": "/api/clientes" },
-                              "description": { "type": "string", "example": "Listar clientes" },
-                              "parameters": { "type": "array", "items": { "type": "object" } }
-                            }
-                          }
-                        },
-                        "tiposDocumento": { "type": "integer", "example": 34 },
-                        "notaCredito": { "type": "string", "example": "Valores negativos na faturação" }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "200": { "description": "Mapa completo da API com endpoints e perguntas" }
         }
       }
     }
   },
   "components": {
+    "parameters": {
+      "clienteId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Codigo do cliente (ex: C0001)"
+      },
+      "artigoId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Codigo do artigo"
+      },
+      "mes": {
+        "name": "mes",
+        "in": "query",
+        "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}$" },
+        "description": "Mes especifico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo."
+      },
+      "ano": {
+        "name": "ano",
+        "in": "query",
+        "schema": { "type": "integer" },
+        "description": "Ano especifico (ex: 2025). Tem prioridade sobre periodo."
+      },
+      "periodo": {
+        "name": "periodo",
+        "in": "query",
+        "schema": { "type": "string", "enum": ["mes", "trimestre", "semestre", "ano"] },
+        "description": "Periodo relativo a data atual. Usado quando nem mes nem ano sao fornecidos. Default: ano."
+      },
+      "page": {
+        "name": "page",
+        "in": "query",
+        "schema": { "type": "integer", "default": 1 },
+        "description": "Pagina (default 1)"
+      },
+      "limit": {
+        "name": "limit",
+        "in": "query",
+        "schema": { "type": "integer", "default": 50, "maximum": 500 },
+        "description": "Resultados por pagina (default 50, max 500)"
+      },
+      "limitOptional": {
+        "name": "limit",
+        "in": "query",
+        "schema": { "type": "integer", "default": 20, "maximum": 100 },
+        "description": "Maximo de resultados (default 20)"
+      }
+    },
+    "responses": {
+      "NotFound": {
+        "description": "Recurso nao encontrado",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
     "securitySchemes": {
       "basicAuth": {
         "type": "http",
-        "scheme": "basic",
-        "description": "Autenticação HTTP Basic"
+        "scheme": "basic"
       },
       "apiKeyHeader": {
         "type": "apiKey",
         "in": "header",
-        "name": "x-api-key",
-        "description": "Chave de API via header"
-      },
-      "apiKeyQuery": {
-        "type": "apiKey",
-        "in": "query",
-        "name": "apikey",
-        "description": "Chave de API via query parameter"
-      }
-    },
-    "schemas": {
-      "ClienteResumo": {
-        "type": "object",
-        "properties": {
-          "cliente": { "type": "string", "example": "C0001" },
-          "nome": { "type": "string", "example": "Construções Silva Lda" },
-          "contribuinte": { "type": "string", "example": "501234567" },
-          "zona": { "type": "string", "example": "Norte" },
-          "localidade": { "type": "string", "example": "Braga" },
-          "vendedor": { "type": "string", "example": "V001" },
-          "telefone": { "type": "string", "example": "+351 253 123 456" },
-          "email": { "type": "string", "example": "geral@construcoessilva.pt" },
-          "ativo": { "type": "boolean", "example": true }
-        }
-      },
-      "ClienteDetalhe": {
-        "type": "object",
-        "properties": {
-          "cliente": { "type": "string", "example": "C0001" },
-          "nome": { "type": "string", "example": "Construções Silva Lda" },
-          "nomeComercial": { "type": "string", "example": "Silva Construções" },
-          "contribuinte": { "type": "string", "example": "501234567" },
-          "morada": { "type": "string", "example": "Rua do Comércio, 123" },
-          "localidade": { "type": "string", "example": "Braga" },
-          "codigoPostal": { "type": "string", "example": "4700-001" },
-          "zona": { "type": "string", "example": "Norte" },
-          "pais": { "type": "string", "example": "PT" },
-          "telefone": { "type": "string", "example": "+351 253 123 456" },
-          "telemovel": { "type": "string", "example": "+351 912 345 678" },
-          "email": { "type": "string", "example": "geral@construcoessilva.pt" },
-          "vendedor": { "type": "string", "example": "V001" },
-          "nomeVendedor": { "type": "string", "example": "João Santos" },
-          "condicoesPagamento": { "type": "string", "example": "30 dias" },
-          "modoExpedicao": { "type": "string", "example": "Transporte próprio" },
-          "limiteCredito": { "type": "number", "format": "double", "example": 50000.00 },
-          "descontoFinanceiro": { "type": "number", "format": "double", "example": 2.0 },
-          "ativo": { "type": "boolean", "example": true },
-          "dataCriacao": { "type": "string", "format": "date", "example": "2018-03-15" }
-        }
-      },
-      "ArtigoResumo": {
-        "type": "object",
-        "properties": {
-          "artigo": { "type": "string", "example": "CIM001" },
-          "descricao": { "type": "string", "example": "Cimento Portland CEM II 42.5R" },
-          "familia": { "type": "string", "example": "Cimentos" },
-          "subfamilia": { "type": "string", "example": "Portland" },
-          "unidade": { "type": "string", "example": "TON" },
-          "precoVenda": { "type": "number", "format": "double", "example": 12.00 },
-          "iva": { "type": "number", "format": "double", "example": 23.0 },
-          "ativo": { "type": "boolean", "example": true }
-        }
-      },
-      "ArtigoDetalhe": {
-        "type": "object",
-        "properties": {
-          "artigo": { "type": "string", "example": "CIM001" },
-          "descricao": { "type": "string", "example": "Cimento Portland CEM II 42.5R" },
-          "familia": { "type": "string", "example": "Cimentos" },
-          "subfamilia": { "type": "string", "example": "Portland" },
-          "unidade": { "type": "string", "example": "TON" },
-          "unidadeCompra": { "type": "string", "example": "TON" },
-          "precoVenda1": { "type": "number", "format": "double", "example": 12.00 },
-          "precoVenda2": { "type": "number", "format": "double", "example": 11.50 },
-          "precoVenda3": { "type": "number", "format": "double", "example": 11.00 },
-          "precoCusto": { "type": "number", "format": "double", "example": 8.50 },
-          "ultimoPrecoCusto": { "type": "number", "format": "double", "example": 8.75 },
-          "custoMedio": { "type": "number", "format": "double", "example": 8.60 },
-          "iva": { "type": "number", "format": "double", "example": 23.0 },
-          "stockAtual": { "type": "number", "format": "double", "example": 5200.0 },
-          "stockMinimo": { "type": "number", "format": "double", "example": 500.0 },
-          "stockMaximo": { "type": "number", "format": "double", "example": 10000.0 },
-          "codigoBarras": { "type": "string", "example": "5601234567890" },
-          "peso": { "type": "number", "format": "double", "example": 1000.0 },
-          "volume": { "type": "number", "format": "double", "example": 0.65 },
-          "ativo": { "type": "boolean", "example": true },
-          "dataCriacao": { "type": "string", "format": "date", "example": "2015-01-10" }
-        }
-      },
-      "Pagination": {
-        "type": "object",
-        "properties": {
-          "page": { "type": "integer", "example": 1 },
-          "limit": { "type": "integer", "example": 50 },
-          "total": { "type": "integer", "example": 1250 },
-          "totalPages": { "type": "integer", "example": 25 },
-          "hasNext": { "type": "boolean", "example": true },
-          "hasPrev": { "type": "boolean", "example": false }
-        }
-      },
-      "Error": {
-        "type": "object",
-        "properties": {
-          "success": { "type": "boolean", "example": false },
-          "error": { "type": "string", "example": "Descrição do erro" },
-          "code": { "type": "string", "example": "ERR_CODE" },
-          "timestamp": { "type": "string", "format": "date-time", "example": "2026-03-10T14:30:00Z" }
-        }
-      }
-    },
-    "responses": {
-      "Unauthorized": {
-        "description": "Não autorizado - credenciais inválidas ou em falta",
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "success": { "type": "boolean", "example": false },
-                "error": { "type": "string", "example": "Autenticação necessária" },
-                "code": { "type": "string", "example": "UNAUTHORIZED" }
-              }
-            }
-          }
-        }
-      },
-      "NotFound": {
-        "description": "Recurso não encontrado",
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "success": { "type": "boolean", "example": false },
-                "error": { "type": "string", "example": "Recurso não encontrado" },
-                "code": { "type": "string", "example": "NOT_FOUND" }
-              }
-            }
-          }
-        }
-      },
-      "InternalError": {
-        "description": "Erro interno do servidor",
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "success": { "type": "boolean", "example": false },
-                "error": { "type": "string", "example": "Erro interno do servidor" },
-                "code": { "type": "string", "example": "INTERNAL_ERROR" }
-              }
-            }
-          }
-        }
+        "name": "x-api-key"
       }
     }
   }

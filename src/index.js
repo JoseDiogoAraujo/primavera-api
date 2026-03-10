@@ -50,6 +50,7 @@ app.use('/api/health', require('./routes/health'));
 app.use('/api/clientes', require('./routes/clientes'));
 app.use('/api/artigos', require('./routes/artigos'));
 app.use('/api/comercial', require('./routes/comercial'));
+app.use('/api/vendas', require('./routes/vendas'));
 app.use('/api/query', require('./routes/query'));
 app.use('/api/copilot', require('./routes/copilot'));
 

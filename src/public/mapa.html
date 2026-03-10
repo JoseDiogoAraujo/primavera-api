@@ -86,30 +86,14 @@
     }).addTo(map);
 
     let markers = L.layerGroup().addTo(map);
-    const geocodeCache = {};
+    // Cache of coordinates by locality name (populated from API response)
+    const coordsLookup = {};
 
     function formatEUR(v) {
       return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v);
     }
     function formatNum(v) {
       return new Intl.NumberFormat('pt-PT').format(v);
-    }
-
-    async function geocode(localidade) {
-      const key = localidade.toLowerCase().trim();
-      if (geocodeCache[key]) return geocodeCache[key];
-
-      const search = encodeURIComponent(localidade + ', Portugal');
-      try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${search}&limit=1&countrycodes=pt`);
-        const data = await res.json();
-        if (data.length > 0) {
-          const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-          geocodeCache[key] = coords;
-          return coords;
-        }
-      } catch (e) { /* ignore */ }
-      return null;
     }
 
     function getColor(value, max) {
@@ -140,27 +124,13 @@
       try {
         const res = await fetch(url);
         const json = await res.json();
-        const dados = json.data || [];
-
-        // Agrupar por localidade (pode haver vários LocalDescarga para a mesma localidade)
-        const agrupado = {};
-        dados.forEach(d => {
-          const loc = d.localidade.trim();
-          if (!agrupado[loc]) {
-            agrupado[loc] = { localidade: loc, numDocumentos: 0, totalVendas: 0, numClientes: 0 };
-          }
-          agrupado[loc].numDocumentos += d.numDocumentos;
-          agrupado[loc].totalVendas += d.totalVendas;
-          agrupado[loc].numClientes += d.numClientes;
-        });
-
-        const localidades = Object.values(agrupado).sort((a, b) => b.totalVendas - a.totalVendas);
+        // API already returns data aggregated by municipality with lat/lng
+        const localidades = json.data || [];
         const maxVendas = localidades.length > 0 ? localidades[0].totalVendas : 1;
 
         // Stats
         const totalV = localidades.reduce((s, l) => s + l.totalVendas, 0);
         const totalD = localidades.reduce((s, l) => s + l.numDocumentos, 0);
-        const totalC = new Set(dados.map(d => d.numClientes)).size;
         document.getElementById('totalVendas').textContent = formatEUR(totalV);
         document.getElementById('totalDocs').textContent = formatNum(totalD);
         document.getElementById('totalLocalidades').textContent = formatNum(localidades.length);
@@ -177,45 +147,36 @@
           </li>
         `).join('');
 
-        // Mapa - geocodificar e adicionar marcadores
+        // Map - coordinates already in data, no geocoding needed
         markers.clearLayers();
         const bounds = [];
 
-        // Geocodificar em batches de 5 (respeitar rate limit do Nominatim)
-        for (let i = 0; i < localidades.length; i += 5) {
-          const batch = localidades.slice(i, i + 5);
-          const results = await Promise.all(batch.map(async (l) => {
-            const coords = await geocode(l.localidade);
-            return { ...l, coords };
-          }));
+        localidades.forEach(l => {
+          if (!l.latitude || !l.longitude) return;
 
-          results.forEach(l => {
-            if (!l.coords) return;
-            bounds.push([l.coords.lat, l.coords.lng]);
+          // Store for click-to-focus
+          coordsLookup[l.localidade] = { lat: l.latitude, lng: l.longitude };
+          bounds.push([l.latitude, l.longitude]);
 
-            const circle = L.circleMarker([l.coords.lat, l.coords.lng], {
-              radius: getRadius(l.totalVendas, maxVendas),
-              fillColor: getColor(l.totalVendas, maxVendas),
-              color: '#fff',
-              weight: 1,
-              opacity: 0.8,
-              fillOpacity: 0.7
-            });
-
-            circle.bindPopup(`
-              <div class="popup-title">${l.localidade}</div>
-              <div class="popup-row"><span class="label">Total Vendas:</span><span class="value">${formatEUR(l.totalVendas)}</span></div>
-              <div class="popup-row"><span class="label">Documentos:</span><span class="value">${formatNum(l.numDocumentos)}</span></div>
-              <div class="popup-row"><span class="label">Clientes:</span><span class="value">${formatNum(l.numClientes)}</span></div>
-              <div class="popup-row"><span class="label">Media/Doc:</span><span class="value">${formatEUR(l.totalVendas / l.numDocumentos)}</span></div>
-            `);
-
-            markers.addLayer(circle);
+          const circle = L.circleMarker([l.latitude, l.longitude], {
+            radius: getRadius(l.totalVendas, maxVendas),
+            fillColor: getColor(l.totalVendas, maxVendas),
+            color: '#fff',
+            weight: 1,
+            opacity: 0.8,
+            fillOpacity: 0.7
           });
 
-          // Rate limit: 1 req/seg por policy do Nominatim
-          if (i + 5 < localidades.length) await new Promise(r => setTimeout(r, 1100));
-        }
+          circle.bindPopup(`
+            <div class="popup-title">${l.localidade}</div>
+            <div class="popup-row"><span class="label">Total Vendas:</span><span class="value">${formatEUR(l.totalVendas)}</span></div>
+            <div class="popup-row"><span class="label">Documentos:</span><span class="value">${formatNum(l.numDocumentos)}</span></div>
+            <div class="popup-row"><span class="label">Clientes:</span><span class="value">${formatNum(l.numClientes)}</span></div>
+            <div class="popup-row"><span class="label">Media/Doc:</span><span class="value">${formatEUR(l.totalVendas / l.numDocumentos)}</span></div>
+          `);
+
+          markers.addLayer(circle);
+        });
 
         if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30] });
 
@@ -226,12 +187,12 @@
     }
 
     function focarLocalidade(nome) {
-      const key = nome.toLowerCase().trim();
-      if (geocodeCache[key]) {
-        map.setView([geocodeCache[key].lat, geocodeCache[key].lng], 13);
+      const coords = coordsLookup[nome];
+      if (coords) {
+        map.setView([coords.lat, coords.lng], 13);
         markers.eachLayer(layer => {
           const ll = layer.getLatLng();
-          if (Math.abs(ll.lat - geocodeCache[key].lat) < 0.001 && Math.abs(ll.lng - geocodeCache[key].lng) < 0.001) {
+          if (Math.abs(ll.lat - coords.lat) < 0.001 && Math.abs(ll.lng - coords.lng) < 0.001) {
             layer.openPopup();
           }
         });

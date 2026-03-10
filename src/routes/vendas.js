@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { query } = require('../db');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { parsePagination, parseDateRange } = require('../middleware/pagination');
+const { getCache, getCoords } = require('../geocode');
 
 const router = Router();
 
@@ -180,6 +181,128 @@ router.get('/recentes/:cliente', asyncHandler(async (req, res) => {
     totalDocumentos: data.length,
     data
   });
+}));
+
+// ---------------------------------------------------------------------------
+// GET /vendas/analytics/por-localidade
+// Vendas por localidade COM coordenadas pre-resolvidas (zero chamadas externas).
+// Usado pelo Grafana geomap e pelo mapa.html.
+// ---------------------------------------------------------------------------
+router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
+  const topN = Math.min(500, Math.max(1, parseInt(req.query.top) || 100));
+
+  // Date filters: dataInicio/dataFim (Grafana format)
+  let dateWhere = '';
+  const params = { topN };
+  if (req.query.dataInicio) {
+    dateWhere += ' AND cd.Data >= @dataInicio';
+    params.dataInicio = req.query.dataInicio;
+  }
+  if (req.query.dataFim) {
+    dateWhere += ' AND cd.Data <= @dataFim';
+    params.dataFim = req.query.dataFim;
+  }
+
+  // Docs de faturacao: FA, FR, FNT, FAC (positivos) / NC, NCT, NPC (abatidos)
+  const sqlText = `
+    SELECT TOP (@topN)
+      CASE
+        WHEN LTRIM(RTRIM(ISNULL(cd.LocalDescarga,''))) NOT IN ('','.','..','Morada do Cliente','Morada da Obra')
+          THEN LTRIM(RTRIM(cd.LocalDescarga))
+        WHEN LTRIM(RTRIM(ISNULL(c.Fac_Cploc,''))) NOT IN ('','.','..')
+          THEN LTRIM(RTRIM(c.Fac_Cploc))
+        ELSE 'Sem Localidade'
+      END AS localidadeRaw,
+      COUNT(*) AS numDocumentos,
+      ROUND(SUM(CASE
+        WHEN cd.TipoDoc IN ('NC','NCT','NPC') THEN -cd.TotalDocumento
+        ELSE cd.TotalDocumento
+      END), 2) AS totalVendas,
+      ROUND(AVG(cd.TotalDocumento), 2) AS mediaDocumento,
+      COUNT(DISTINCT cd.Entidade) AS numClientes,
+      MIN(cd.Data) AS primeiraVenda,
+      MAX(cd.Data) AS ultimaVenda
+    FROM CabecDoc cd
+    LEFT JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    LEFT JOIN Clientes c ON cd.Entidade = c.Cliente
+    WHERE cd.TipoDoc IN ('FA','FR','FNT','FAC','NC','NCT','NPC')
+      AND ISNULL(cds.Anulado, 0) = 0
+      ${dateWhere}
+    GROUP BY CASE
+        WHEN LTRIM(RTRIM(ISNULL(cd.LocalDescarga,''))) NOT IN ('','.','..','Morada do Cliente','Morada da Obra')
+          THEN LTRIM(RTRIM(cd.LocalDescarga))
+        WHEN LTRIM(RTRIM(ISNULL(c.Fac_Cploc,''))) NOT IN ('','.','..')
+          THEN LTRIM(RTRIM(c.Fac_Cploc))
+        ELSE 'Sem Localidade'
+      END
+    ORDER BY totalVendas DESC
+  `;
+
+  const result = await query(sqlText, params);
+  const rows = result.recordset || [];
+
+  // Normalize raw localities -> municipalities using locality-cache.json
+  // Then resolve coordinates from municipality-coords.json
+  const localityCache = getCache();
+  const municipalityMap = {};
+
+  for (const row of rows) {
+    const raw = row.localidadeRaw;
+    if (raw === 'Sem Localidade') continue;
+
+    // Look up: raw string -> normalized municipality name
+    const normalized = localityCache[raw] || localityCache[raw.trim()] || null;
+    if (!normalized) continue;
+
+    // Get pre-cached lat/lng
+    const coords = getCoords(normalized);
+    if (!coords) continue;
+
+    // Aggregate by normalized municipality
+    if (!municipalityMap[normalized]) {
+      municipalityMap[normalized] = {
+        localidade: normalized,
+        latitude: coords.lat,
+        longitude: coords.lng,
+        numDocumentos: 0,
+        totalVendas: 0,
+        mediaDocumento: 0,
+        numClientes: 0,
+        primeiraVenda: null,
+        ultimaVenda: null,
+        _totalForAvg: 0,
+        _countForAvg: 0,
+      };
+    }
+
+    const m = municipalityMap[normalized];
+    m.numDocumentos += row.numDocumentos;
+    m.totalVendas = Math.round((m.totalVendas + (row.totalVendas || 0)) * 100) / 100;
+    m.numClientes += row.numClientes;
+    m._totalForAvg += (row.mediaDocumento || 0) * row.numDocumentos;
+    m._countForAvg += row.numDocumentos;
+
+    if (!m.primeiraVenda || (row.primeiraVenda && row.primeiraVenda < m.primeiraVenda)) {
+      m.primeiraVenda = row.primeiraVenda;
+    }
+    if (!m.ultimaVenda || (row.ultimaVenda && row.ultimaVenda > m.ultimaVenda)) {
+      m.ultimaVenda = row.ultimaVenda;
+    }
+  }
+
+  // Finalize
+  const data = Object.values(municipalityMap)
+    .map(m => {
+      m.mediaDocumento = m._countForAvg > 0
+        ? Math.round((m._totalForAvg / m._countForAvg) * 100) / 100
+        : 0;
+      delete m._totalForAvg;
+      delete m._countForAvg;
+      return m;
+    })
+    .sort((a, b) => b.totalVendas - a.totalVendas);
+
+  res.json({ total: data.length, data });
 }));
 
 module.exports = router;
