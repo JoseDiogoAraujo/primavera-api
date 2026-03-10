@@ -215,10 +215,10 @@ router.get('/analytics/por-localidade', asyncHandler(async (req, res) => {
       END AS localidadeRaw,
       COUNT(*) AS numDocumentos,
       ROUND(SUM(CASE
-        WHEN cd.TipoDoc IN ('NC','NCT','NPC') THEN -cd.TotalDocumento
-        ELSE cd.TotalDocumento
+        WHEN cd.TipoDoc IN ('NC','NCT','NPC') THEN -(cd.TotalDocumento - cd.TotalIva)
+        ELSE (cd.TotalDocumento - cd.TotalIva)
       END), 2) AS totalVendas,
-      ROUND(AVG(cd.TotalDocumento), 2) AS mediaDocumento,
+      ROUND(AVG(cd.TotalDocumento - cd.TotalIva), 2) AS mediaDocumento,
       COUNT(DISTINCT cd.Entidade) AS numClientes,
       MIN(cd.Data) AS primeiraVenda,
       MAX(cd.Data) AS ultimaVenda
