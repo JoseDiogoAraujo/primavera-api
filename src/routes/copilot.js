@@ -108,13 +108,6 @@ router.get('/context', asyncHandler(async (req, res) => {
           descricao: 'Que clientes mais compram este artigo. Use ano=2025 ou mes=2025-03.',
           responde: ['Qual o cliente que mais comprou o artigo X em 2025?'],
         },
-        maiorMargem: {
-          method: 'GET',
-          path: '/api/artigos/maior-margem',
-          params: 'ano, mes (YYYY-MM), periodo, familia, limit',
-          descricao: 'Artigos com maior margem. Use ano=2025 ou mes=2025-03.',
-          responde: ['Qual o artigo com maior margem em 2025?'],
-        },
       },
       comercial: {
         descricao: 'Inteligencia comercial: resumos, localidades, risco, recomendacoes, vendedores',

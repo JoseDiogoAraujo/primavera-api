@@ -184,54 +184,6 @@ router.get('/top', asyncHandler(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------------------
-// 7. GET /maior-margem – Articles with highest margin
-//    (defined before /:id to avoid route conflicts)
-// ---------------------------------------------------------------------------
-
-router.get('/maior-margem', asyncHandler(async (req, res) => {
-  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-  const df = parseDateFilter(req, 'cd.Data');
-  const params = {};
-  let familiaFilter = '';
-
-  if (req.query.familia) {
-    familiaFilter = 'AND a.Familia = @familia';
-    params.familia = req.query.familia;
-  }
-
-  const result = await query(`
-    SELECT TOP (@topN)
-      ld.Artigo,
-      MAX(a.Descricao)           AS descricao,
-      MAX(a.Familia)             AS familia,
-      SUM(
-        CASE WHEN cd.TipoDoc IN (${CREDIT_IN})
-          THEN -ld.TotalIliquido * ld.PercentagemMargem
-          ELSE  ld.TotalIliquido * ld.PercentagemMargem
-        END
-      ) / NULLIF(${VAL_CASE}, 0)  AS margemMedia,
-      ${VAL_CASE}                  AS valorVendido,
-      ${QTY_CASE}                  AS quantidadeVendida
-    FROM LinhasDoc ld
-    INNER JOIN CabecDoc cd        ON cd.Id = ld.IdCabecDoc
-    LEFT  JOIN CabecDocStatus cds ON cds.IdCabecDoc = cd.Id
-    INNER JOIN Artigo a           ON a.Artigo = ld.Artigo
-    WHERE cd.TipoDoc IN (${BILLING_IN})
-      AND ISNULL(cds.Anulado, 0) = 0
-      AND ${df.whereClause}
-      ${familiaFilter}
-    GROUP BY ld.Artigo
-    HAVING ${VAL_CASE} > 0
-    ORDER BY margemMedia DESC
-  `, { ...params, topN: limit });
-
-  res.json({
-    periodo: df.label,
-    top: result.recordset
-  });
-}));
-
-// ---------------------------------------------------------------------------
 // 2. GET /:id – Article detail
 // ---------------------------------------------------------------------------
 
