@@ -316,6 +316,65 @@ router.get('/top', asyncHandler(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------------------
+// GET /clientes/inativos - Clientes com historico que pararam de comprar
+// (MUST be before /:id to avoid Express treating "inativos" as an id)
+// ---------------------------------------------------------------------------
+router.get('/inativos', asyncHandler(async (req, res) => {
+  const mesesInativo = parseInt(req.query.meses) || 6;
+  const minCompras = parseInt(req.query.minCompras) || 3;
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 50));
+
+  const result = await query(`
+    SELECT
+      cd.Entidade AS cliente,
+      cl.Nome AS nome,
+      cl.Zona AS zona,
+      ISNULL(z.Descricao, '') AS zonaDescricao,
+      cl.Fac_Local AS localidade,
+      COUNT(DISTINCT cd.Id) AS totalComprasHistorico,
+      ${NET_TOTAL_EXPR} AS totalFaturadoHistorico,
+      MAX(cd.Data) AS ultimaCompra,
+      DATEDIFF(DAY, MAX(cd.Data), GETDATE()) AS diasSemCompra,
+      SUM(CASE WHEN cd.Data >= DATEADD(MONTH, -${mesesInativo + 12}, GETDATE())
+                AND cd.Data < DATEADD(MONTH, -${mesesInativo}, GETDATE())
+           THEN CASE WHEN cd.TipoDoc IN (${CREDIT_IN}) THEN -cd.TotalDocumento ELSE cd.TotalDocumento END
+           ELSE 0 END) AS faturacaoAnoAnterior,
+      SUM(CASE WHEN cd.Data >= DATEADD(MONTH, -${mesesInativo + 12}, GETDATE())
+                AND cd.Data < DATEADD(MONTH, -${mesesInativo}, GETDATE())
+           THEN 1 ELSE 0 END) AS comprasAnoAnterior
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    INNER JOIN Clientes cl ON cd.Entidade = cl.Cliente
+    LEFT JOIN Zonas z ON cl.Zona = z.Zona
+    WHERE ${BILLING_BASE_WHERE}
+      AND ISNULL(cl.ClienteAnulado, 0) = 0
+    GROUP BY cd.Entidade, cl.Nome, cl.Zona, z.Descricao, cl.Fac_Local
+    HAVING MAX(cd.Data) < DATEADD(MONTH, -@mesesInativo, GETDATE())
+      AND COUNT(DISTINCT cd.Id) >= @minCompras
+    ORDER BY totalFaturadoHistorico DESC
+    OFFSET 0 ROWS FETCH NEXT @limit ROWS ONLY
+  `, { mesesInativo, minCompras, limit });
+
+  res.json({
+    filtros: { mesesInativo, minCompras },
+    total: result.recordset.length,
+    data: result.recordset.map(r => ({
+      cliente: r.cliente,
+      nome: r.nome,
+      zona: r.zona,
+      zonaDescricao: r.zonaDescricao,
+      localidade: r.localidade,
+      totalComprasHistorico: r.totalComprasHistorico,
+      totalFaturadoHistorico: r.totalFaturadoHistorico || 0,
+      ultimaCompra: r.ultimaCompra,
+      diasSemCompra: r.diasSemCompra,
+      comprasAnoAnterior: r.comprasAnoAnterior,
+      faturacaoAnoAnterior: r.faturacaoAnoAnterior || 0,
+    })),
+  });
+}));
+
+// ---------------------------------------------------------------------------
 // GET /clientes/:id - Detalhes basicos do cliente
 // ---------------------------------------------------------------------------
 router.get('/:id', asyncHandler(async (req, res) => {

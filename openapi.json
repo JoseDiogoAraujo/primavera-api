@@ -254,6 +254,61 @@
         }
       }
     },
+    "/api/clientes/inativos": {
+      "get": {
+        "tags": ["Clientes"],
+        "summary": "Clientes inativos com histórico de compras",
+        "description": "Clientes que tinham compras regulares (mínimo 3 documentos) mas pararam há N meses. Mostra o histórico total e a faturação no período anterior à inatividade.",
+        "operationId": "clientesInativos",
+        "parameters": [
+          { "name": "meses", "in": "query", "description": "Meses sem compra (default: 6)", "schema": { "type": "integer", "default": 6 } },
+          { "name": "minCompras", "in": "query", "description": "Mínimo de compras no histórico para ser considerado (default: 3)", "schema": { "type": "integer", "default": 3 } },
+          { "name": "limit", "in": "query", "description": "Número máximo de resultados", "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de clientes inativos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "filtros": {
+                      "type": "object",
+                      "properties": {
+                        "mesesInativo": { "type": "integer", "example": 6 },
+                        "minCompras": { "type": "integer", "example": 3 }
+                      }
+                    },
+                    "total": { "type": "integer", "example": 12 },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "cliente": { "type": "string", "example": "C0045" },
+                          "nome": { "type": "string", "example": "Construções Almeida" },
+                          "zona": { "type": "string" },
+                          "localidade": { "type": "string" },
+                          "totalComprasHistorico": { "type": "integer", "example": 25 },
+                          "totalFaturadoHistorico": { "type": "number", "format": "double", "example": 180000.00 },
+                          "ultimaCompra": { "type": "string", "format": "date-time" },
+                          "diasSemCompra": { "type": "integer", "example": 245 },
+                          "comprasAnoAnterior": { "type": "integer", "example": 12 },
+                          "faturacaoAnoAnterior": { "type": "number", "format": "double", "example": 95000.00 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
     "/api/clientes/{id}/comparacao-anual": {
       "get": {
         "tags": ["Clientes"],

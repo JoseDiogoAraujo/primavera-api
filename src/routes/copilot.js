@@ -93,6 +93,17 @@ router.get('/context', asyncHandler(async (req, res) => {
             'Qual a evolucao mensal do cliente?',
           ],
         },
+        inativos: {
+          method: 'GET',
+          path: '/api/clientes/inativos',
+          params: 'meses (default 6), minCompras (default 3), limit',
+          descricao: 'Clientes que tinham compras regulares (minimo 3) mas pararam ha N meses. Mostra historico, faturacao anterior e dias sem compra.',
+          responde: [
+            'Que clientes deixaram de comprar?',
+            'Clientes inativos ha mais de 6 meses que compravam regularmente?',
+            'Quem parou de comprar no ultimo ano?',
+          ],
+        },
         maiorVenda: {
           method: 'GET',
           path: '/api/clientes/:id/maior-venda',
