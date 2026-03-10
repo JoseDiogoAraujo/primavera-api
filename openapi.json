@@ -254,6 +254,81 @@
         }
       }
     },
+    "/api/clientes/{id}/orcamentos": {
+      "get": {
+        "tags": ["Clientes"],
+        "summary": "Orçamentos de um cliente",
+        "description": "Lista todos os orçamentos (POR) de um cliente. Use ano=2024 ou mes=2024-01 para filtrar por período.",
+        "operationId": "orcamentosCliente",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Código do cliente",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ano",
+            "in": "query",
+            "description": "Ano específico (ex: 2024). Se fornecido, ignora periodo.",
+            "schema": { "type": "integer", "example": 2024 }
+          },
+          {
+            "name": "mes",
+            "in": "query",
+            "description": "Mês específico no formato YYYY-MM (ex: 2024-01). Tem prioridade sobre ano e periodo.",
+            "schema": { "type": "string", "example": "2024-01" }
+          },
+          {
+            "name": "periodo",
+            "in": "query",
+            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
+            "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Número máximo de resultados",
+            "schema": { "type": "integer", "default": 50 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de orçamentos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cliente": { "type": "string", "example": "C0001" },
+                    "periodo": { "type": "string", "example": "2024" },
+                    "total": { "type": "integer", "example": 5 },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "TipoDoc": { "type": "string", "example": "POR" },
+                          "NumDoc": { "type": "integer", "example": 123 },
+                          "Serie": { "type": "string", "example": "A" },
+                          "Data": { "type": "string", "format": "date-time" },
+                          "total": { "type": "number", "format": "double", "example": 15000.00 },
+                          "observacoes": { "type": "string" },
+                          "fechado": { "type": "integer", "example": 0 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
     "/api/clientes/{id}": {
       "get": {
         "tags": ["Clientes"],

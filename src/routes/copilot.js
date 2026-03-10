@@ -63,6 +63,16 @@ router.get('/context', asyncHandler(async (req, res) => {
           params: 'ano, mes (YYYY-MM), zona, localidade, periodo, limit',
           descricao: 'Ranking de clientes por faturacao. Use ano=2025 ou mes=2025-03.',
         },
+        orcamentos: {
+          method: 'GET',
+          path: '/api/clientes/:id/orcamentos',
+          params: 'ano, mes (YYYY-MM), periodo, limit',
+          descricao: 'Lista orcamentos (POR) de um cliente. Use ano=2024 ou mes=2024-01.',
+          responde: [
+            'Que orcamentos fez o cliente X em 2024?',
+            'Orcamentos de janeiro de 2025 do cliente Y?',
+          ],
+        },
       },
       artigos: {
         descricao: 'Stock, precos, top vendidos, analise por cliente',

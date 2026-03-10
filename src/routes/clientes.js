@@ -612,4 +612,40 @@ router.get('/:id/historico', asyncHandler(async (req, res) => {
   });
 }));
 
+// ---------------------------------------------------------------------------
+// GET /clientes/:id/orcamentos - Orcamentos de um cliente
+// ---------------------------------------------------------------------------
+router.get('/:id/orcamentos', asyncHandler(async (req, res) => {
+  const clienteId = req.params.id;
+  const df = parseDateFilter(req, 'cd.Data');
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 50));
+
+  const result = await query(`
+    SELECT
+      cd.TipoDoc,
+      cd.NumDoc,
+      cd.Serie,
+      cd.Data,
+      cd.TotalDocumento AS total,
+      cd.Observacoes AS observacoes,
+      ISNULL(cds.Fechado, 0) AS fechado
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE cd.TipoEntidade = 'C'
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc = 'POR'
+      AND ISNULL(cds.Anulado, 0) = 0
+      AND ${df.whereClause}
+    ORDER BY cd.Data DESC
+    OFFSET 0 ROWS FETCH NEXT @limit ROWS ONLY
+  `, { clienteId, limit });
+
+  res.json({
+    cliente: clienteId,
+    periodo: df.label,
+    total: result.recordset.length,
+    data: result.recordset
+  });
+}));
+
 module.exports = router;
