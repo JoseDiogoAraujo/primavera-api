@@ -418,7 +418,7 @@
       "get": {
         "tags": ["Clientes"],
         "summary": "Histórico de faturação do cliente",
-        "description": "Retorna o histórico de faturação do cliente incluindo acumulado do ano (YTD), comparação ano-a-ano (YoY), margem e evolução mensal.",
+        "description": "Retorna o histórico de faturação do cliente incluindo acumulado do ano (YTD), comparação ano-a-ano (YoY), margem, evolução mensal e última compra com artigos comprados.",
         "operationId": "historicoCliente",
         "parameters": [
           {
@@ -457,6 +457,31 @@
                             "faturacaoAnoAnterior": { "type": "number", "format": "double", "example": 78000.00 },
                             "variacao": { "type": "number", "format": "double", "example": 9.2 },
                             "variacaoAbsoluta": { "type": "number", "format": "double", "example": 7200.00 }
+                          }
+                        },
+                        "ultimaCompra": {
+                          "type": "object",
+                          "description": "Última fatura do cliente com artigos comprados",
+                          "properties": {
+                            "tipoDoc": { "type": "string", "example": "FA" },
+                            "numDoc": { "type": "integer", "example": 125 },
+                            "serie": { "type": "string", "example": "A" },
+                            "data": { "type": "string", "format": "date-time" },
+                            "total": { "type": "number", "format": "double", "example": 2350.00 },
+                            "artigos": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "artigo": { "type": "string", "example": "CIM001" },
+                                  "descricao": { "type": "string", "example": "Cimento Portland CEM II" },
+                                  "quantidade": { "type": "number", "format": "double", "example": 50 },
+                                  "unidade": { "type": "string", "example": "TON" },
+                                  "precoUnitario": { "type": "number", "format": "double", "example": 47.00 },
+                                  "totalLinha": { "type": "number", "format": "double", "example": 2350.00 }
+                                }
+                              }
+                            }
                           }
                         },
                         "evolucaoMensal": {

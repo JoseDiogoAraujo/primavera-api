@@ -36,11 +36,12 @@ router.get('/context', asyncHandler(async (req, res) => {
         historico: {
           method: 'GET',
           path: '/api/clientes/:id/historico',
-          descricao: 'Faturacao YTD vs ano passado, ultimos 12 meses, maior venda, ultimo orcamento, margem media, evolucao mensal',
+          descricao: 'Faturacao YTD vs ano passado, ultimos 12 meses, maior venda, ultima compra (com artigos comprados), ultimo orcamento, margem media, evolucao mensal',
           responde: [
             'Quanto comprou este ano?',
             'Esta a comprar mais ou menos que o ano passado?',
             'Qual foi a maior venda?',
+            'Qual foi a ultima compra e que artigos levou?',
             'Qual o ultimo orcamento (POR)?',
             'Qual a margem media?',
             'Total faturado nos ultimos 12 meses?',

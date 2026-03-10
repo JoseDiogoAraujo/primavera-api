@@ -535,10 +535,10 @@ router.get('/:id/historico', asyncHandler(async (req, res) => {
     ORDER BY cd.TotalDocumento DESC
   `, { clienteId });
 
-  // 6. Last purchase (most recent billing doc)
+  // 6. Last purchase (most recent billing doc) + its line items
   const ultimaCompraResult = await query(`
     SELECT TOP 1
-      cd.TipoDoc, cd.NumDoc, cd.Serie, cd.Data, cd.TotalDocumento AS total
+      cd.Id, cd.TipoDoc, cd.NumDoc, cd.Serie, cd.Data, cd.TotalDocumento AS total
     FROM CabecDoc cd
     INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
     WHERE ${BILLING_BASE_WHERE}
@@ -546,6 +546,25 @@ router.get('/:id/historico', asyncHandler(async (req, res) => {
       AND cd.TipoDoc NOT IN (${CREDIT_IN})
     ORDER BY cd.Data DESC
   `, { clienteId });
+
+  let ultimaCompraArtigos = [];
+  if (ultimaCompraResult.recordset.length) {
+    const docId = ultimaCompraResult.recordset[0].Id;
+    const linhasResult = await query(`
+      SELECT
+        ld.Artigo AS artigo,
+        a.Descricao AS descricao,
+        ld.Quantidade AS quantidade,
+        ld.Unidade AS unidade,
+        ld.PrecUnit AS precoUnitario,
+        ld.TotalIliquido AS totalLinha
+      FROM LinhasDoc ld
+      LEFT JOIN Artigo a ON a.Artigo = ld.Artigo
+      WHERE ld.IdCabecDoc = @docId
+      ORDER BY ld.NumLinha
+    `, { docId });
+    ultimaCompraArtigos = linhasResult.recordset;
+  }
 
   // 7. Last budget/quote (POR)
   const ultimoOrcResult = await query(`
@@ -598,7 +617,7 @@ router.get('/:id/historico', asyncHandler(async (req, res) => {
       ? { tipoDoc: maiorVenda.TipoDoc, numDoc: maiorVenda.NumDoc, serie: maiorVenda.Serie, data: maiorVenda.Data, total: maiorVenda.total }
       : null,
     ultimaCompra: ultimaCompra
-      ? { tipoDoc: ultimaCompra.TipoDoc, numDoc: ultimaCompra.NumDoc, serie: ultimaCompra.Serie, data: ultimaCompra.Data, total: ultimaCompra.total }
+      ? { tipoDoc: ultimaCompra.TipoDoc, numDoc: ultimaCompra.NumDoc, serie: ultimaCompra.Serie, data: ultimaCompra.Data, total: ultimaCompra.total, artigos: ultimaCompraArtigos }
       : null,
     ultimoOrcamento: ultimoOrc
       ? { tipoDoc: ultimoOrc.TipoDoc, numDoc: ultimoOrc.NumDoc, serie: ultimoOrc.Serie, data: ultimoOrc.Data, total: ultimoOrc.total }
