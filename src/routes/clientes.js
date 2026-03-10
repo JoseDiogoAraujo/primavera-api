@@ -667,4 +667,131 @@ router.get('/:id/orcamentos', asyncHandler(async (req, res) => {
   });
 }));
 
+// ---------------------------------------------------------------------------
+// GET /clientes/:id/atividade - Resumo anual de orcamentos vs compras
+// ---------------------------------------------------------------------------
+router.get('/:id/atividade', asyncHandler(async (req, res) => {
+  const clienteId = req.params.id;
+
+  // Orcamentos (POR) agrupados por ano
+  const orcResult = await query(`
+    SELECT
+      YEAR(cd.Data) AS ano,
+      COUNT(*) AS totalOrcamentos,
+      SUM(cd.TotalDocumento) AS valorTotal,
+      MAX(cd.Data) AS ultimoOrcamentoData,
+      MAX(cd.NumDoc) AS ultimoOrcamentoNum
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE cd.TipoEntidade = 'C'
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc = 'POR'
+      AND ISNULL(cds.Anulado, 0) = 0
+    GROUP BY YEAR(cd.Data)
+    ORDER BY ano DESC
+  `, { clienteId });
+
+  // Compras (faturacao) agrupadas por ano
+  const comprasResult = await query(`
+    SELECT
+      YEAR(cd.Data) AS ano,
+      COUNT(DISTINCT cd.Id) AS totalCompras,
+      ${NET_TOTAL_EXPR} AS valorTotal,
+      MAX(cd.Data) AS ultimaCompraData
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc NOT IN (${CREDIT_IN})
+    GROUP BY YEAR(cd.Data)
+    ORDER BY ano DESC
+  `, { clienteId });
+
+  // Detalhes do ultimo orcamento por ano (serie, numDoc)
+  const orcDetalhes = await query(`
+    SELECT
+      YEAR(cd.Data) AS ano,
+      cd.TipoDoc, cd.NumDoc, cd.Serie, cd.Data, cd.TotalDocumento AS total
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE cd.TipoEntidade = 'C'
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc = 'POR'
+      AND ISNULL(cds.Anulado, 0) = 0
+      AND cd.Data = (
+        SELECT MAX(cd2.Data)
+        FROM CabecDoc cd2
+        INNER JOIN CabecDocStatus cds2 ON cd2.Id = cds2.IdCabecDoc
+        WHERE cd2.TipoEntidade = 'C'
+          AND cd2.Entidade = @clienteId
+          AND cd2.TipoDoc = 'POR'
+          AND ISNULL(cds2.Anulado, 0) = 0
+          AND YEAR(cd2.Data) = YEAR(cd.Data)
+      )
+    ORDER BY cd.Data DESC
+  `, { clienteId });
+
+  // Detalhes da ultima compra por ano
+  const compraDetalhes = await query(`
+    SELECT
+      YEAR(cd.Data) AS ano,
+      cd.TipoDoc, cd.NumDoc, cd.Serie, cd.Data, cd.TotalDocumento AS total
+    FROM CabecDoc cd
+    INNER JOIN CabecDocStatus cds ON cd.Id = cds.IdCabecDoc
+    WHERE ${BILLING_BASE_WHERE}
+      AND cd.Entidade = @clienteId
+      AND cd.TipoDoc NOT IN (${CREDIT_IN})
+      AND cd.Data = (
+        SELECT MAX(cd2.Data)
+        FROM CabecDoc cd2
+        INNER JOIN CabecDocStatus cds2 ON cd2.Id = cds2.IdCabecDoc
+        WHERE cd2.TipoDoc IN (${BILLING_IN})
+          AND ISNULL(cds2.Anulado, 0) = 0
+          AND cd2.Entidade = @clienteId
+          AND cd2.TipoDoc NOT IN (${CREDIT_IN})
+          AND YEAR(cd2.Data) = YEAR(cd.Data)
+      )
+    ORDER BY cd.Data DESC
+  `, { clienteId });
+
+  // Indexar detalhes por ano
+  const orcPorAno = {};
+  for (const r of orcDetalhes.recordset) {
+    orcPorAno[r.ano] = { tipoDoc: r.TipoDoc, numDoc: r.NumDoc, serie: r.Serie, data: r.Data, total: r.total };
+  }
+  const compraPorAno = {};
+  for (const r of compraDetalhes.recordset) {
+    compraPorAno[r.ano] = { tipoDoc: r.TipoDoc, numDoc: r.NumDoc, serie: r.Serie, data: r.Data, total: r.total };
+  }
+
+  // Juntar todos os anos
+  const anos = new Set();
+  for (const r of orcResult.recordset) anos.add(r.ano);
+  for (const r of comprasResult.recordset) anos.add(r.ano);
+
+  const orcMap = {};
+  for (const r of orcResult.recordset) orcMap[r.ano] = r;
+  const compMap = {};
+  for (const r of comprasResult.recordset) compMap[r.ano] = r;
+
+  const resumo = [...anos].sort((a, b) => b - a).map(ano => ({
+    ano,
+    orcamentos: {
+      total: orcMap[ano]?.totalOrcamentos || 0,
+      valorTotal: orcMap[ano]?.valorTotal || 0,
+      ultimo: orcPorAno[ano] || null,
+    },
+    compras: {
+      total: compMap[ano]?.totalCompras || 0,
+      valorTotal: compMap[ano]?.valorTotal || 0,
+      ultima: compraPorAno[ano] || null,
+    },
+  }));
+
+  res.json({
+    cliente: clienteId,
+    resumoPorAno: resumo,
+  });
+}));
+
 module.exports = router;

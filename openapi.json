@@ -254,6 +254,74 @@
         }
       }
     },
+    "/api/clientes/{id}/atividade": {
+      "get": {
+        "tags": ["Clientes"],
+        "summary": "Atividade anual: orçamentos vs compras",
+        "description": "Resumo por ano com total de orçamentos e compras, valores e último documento de cada tipo. Útil para identificar clientes que pedem orçamentos mas não compram.",
+        "operationId": "atividadeCliente",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Código do cliente",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumo anual de atividade",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cliente": { "type": "string", "example": "C0001" },
+                    "resumoPorAno": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ano": { "type": "integer", "example": 2025 },
+                          "orcamentos": {
+                            "type": "object",
+                            "properties": {
+                              "total": { "type": "integer", "example": 10 },
+                              "valorTotal": { "type": "number", "format": "double", "example": 85000.00 },
+                              "ultimo": {
+                                "type": "object",
+                                "properties": {
+                                  "tipoDoc": { "type": "string", "example": "POR" },
+                                  "numDoc": { "type": "integer", "example": 456 },
+                                  "serie": { "type": "string", "example": "A" },
+                                  "data": { "type": "string", "format": "date-time" },
+                                  "total": { "type": "number", "format": "double", "example": 12000.00 }
+                                }
+                              }
+                            }
+                          },
+                          "compras": {
+                            "type": "object",
+                            "properties": {
+                              "total": { "type": "integer", "example": 0 },
+                              "valorTotal": { "type": "number", "format": "double", "example": 0 },
+                              "ultima": { "type": "object", "nullable": true }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
     "/api/clientes/{id}/orcamentos": {
       "get": {
         "tags": ["Clientes"],
