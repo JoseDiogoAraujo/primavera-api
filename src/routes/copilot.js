@@ -49,19 +49,19 @@ router.get('/context', asyncHandler(async (req, res) => {
         segmentacao: {
           method: 'GET',
           path: '/api/clientes/segmentacao',
-          params: 'zona, localidade, periodo (mes|trimestre|ano), limit',
-          descricao: 'Top clientes, crescimento/declinio, inativos (sem compra ha 6+ meses)',
+          params: 'ano, mes (YYYY-MM), zona, localidade, periodo (mes|trimestre|ano), limit',
+          descricao: 'Top clientes, crescimento/declinio, inativos. Use ano=2025 ou mes=2025-03 para periodo especifico.',
           responde: [
-            'Quais os top clientes de Braga?',
-            'Quem mais cresceu/diminuiu este trimestre?',
+            'Quais os top clientes de 2025?',
+            'Quem mais cresceu/diminuiu em 2024?',
             'Que clientes nao compram ha mais de 6 meses?',
           ],
         },
         top: {
           method: 'GET',
           path: '/api/clientes/top',
-          params: 'zona, localidade, periodo, limit',
-          descricao: 'Ranking rapido de clientes por volume faturado',
+          params: 'ano, mes (YYYY-MM), zona, localidade, periodo, limit',
+          descricao: 'Ranking de clientes por faturacao. Use ano=2025 ou mes=2025-03.',
         },
       },
       artigos: {
@@ -87,23 +87,23 @@ router.get('/context', asyncHandler(async (req, res) => {
         topVendidos: {
           method: 'GET',
           path: '/api/artigos/top',
-          params: 'periodo (mes|trimestre|semestre|ano), familia, limit',
-          descricao: 'Top artigos mais vendidos',
-          responde: ['Top artigos mais vendidos este mes/ano/familia X?'],
+          params: 'ano, mes (YYYY-MM), periodo, familia, limit',
+          descricao: 'Top artigos mais vendidos. Use ano=2025 ou mes=2025-03.',
+          responde: ['Top artigos mais vendidos em 2025?', 'Top artigos da familia X em marco 2025?'],
         },
         topClientes: {
           method: 'GET',
           path: '/api/artigos/:id/top-clientes',
-          params: 'periodo, limit',
-          descricao: 'Que clientes mais compram este artigo',
-          responde: ['Qual o cliente que mais compra o artigo X?'],
+          params: 'ano, mes (YYYY-MM), periodo, limit',
+          descricao: 'Que clientes mais compram este artigo. Use ano=2025 ou mes=2025-03.',
+          responde: ['Qual o cliente que mais comprou o artigo X em 2025?'],
         },
         maiorMargem: {
           method: 'GET',
           path: '/api/artigos/maior-margem',
-          params: 'periodo, familia, limit',
-          descricao: 'Artigos com maior margem media ponderada',
-          responde: ['Qual o artigo com maior margem?'],
+          params: 'ano, mes (YYYY-MM), periodo, familia, limit',
+          descricao: 'Artigos com maior margem. Use ano=2025 ou mes=2025-03.',
+          responde: ['Qual o artigo com maior margem em 2025?'],
         },
       },
       comercial: {
@@ -121,9 +121,9 @@ router.get('/context', asyncHandler(async (req, res) => {
         porLocalidade: {
           method: 'GET',
           path: '/api/comercial/por-localidade',
-          params: 'periodo (mes|trimestre|ano), limit',
-          descricao: 'Vendas agrupadas por localidade/zona',
-          responde: ['Onde vendemos mais? Onde vendemos menos?'],
+          params: 'ano, mes (YYYY-MM), periodo, limit',
+          descricao: 'Vendas por localidade/zona. Use ano=2025 ou mes=2025-03.',
+          responde: ['Onde vendemos mais em 2025?', 'Vendas por localidade em marco 2025?'],
         },
         clientesRisco: {
           method: 'GET',
@@ -145,8 +145,8 @@ router.get('/context', asyncHandler(async (req, res) => {
         vendedores: {
           method: 'GET',
           path: '/api/comercial/vendedores',
-          params: 'periodo (mes|ano), limit',
-          descricao: 'Performance por vendedor: vendas, margem, clientes, ticket medio',
+          params: 'ano, mes (YYYY-MM), periodo, limit',
+          descricao: 'Performance por vendedor. Use ano=2025 ou mes=2025-03.',
         },
         evolucaoMensal: {
           method: 'GET',
@@ -170,7 +170,12 @@ router.get('/context', asyncHandler(async (req, res) => {
       },
     },
     paginacao: { parametros: 'page (default 1), limit (default 50, max 500)', resposta: '{ page, limit, total, data: [...] }' },
-    periodos: { valores: 'mes, trimestre, semestre, ano', nota: 'Sempre relativo a data atual' },
+    periodos: {
+      valores: 'mes, trimestre, semestre, ano (relativo a data atual)',
+      filtrosAbsolutos: 'ano=2025 (ano especifico) ou mes=2025-03 (mes especifico)',
+      prioridade: 'mes > ano > periodo',
+      nota: 'Usar ano ou mes para consultar periodos passados. Sem eles, usa o periodo corrente.',
+    },
     dicas: [
       'Usar /clientes/:id/perfil-financeiro para verificar credito antes de encomenda',
       'Usar /clientes/:id/historico para comparar faturacao YTD vs ano passado',

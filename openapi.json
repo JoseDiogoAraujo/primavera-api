@@ -121,9 +121,21 @@
             "schema": { "type": "string" }
           },
           {
+            "name": "ano",
+            "in": "query",
+            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
+            "schema": { "type": "integer", "example": 2025 }
+          },
+          {
+            "name": "mes",
+            "in": "query",
+            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
+            "schema": { "type": "string", "example": "2025-03" }
+          },
+          {
             "name": "periodo",
             "in": "query",
-            "description": "Período de análise",
+            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
             "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
           },
           {
@@ -169,9 +181,21 @@
       "get": {
         "tags": ["Clientes"],
         "summary": "Top clientes",
-        "description": "Ranking dos melhores clientes por faturação no período especificado.",
+        "description": "Ranking dos melhores clientes por faturação. Use 'ano' para consultar um ano específico (ex: 2025) ou 'periodo' para o ano corrente.",
         "operationId": "topClientes",
         "parameters": [
+          {
+            "name": "ano",
+            "in": "query",
+            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
+            "schema": { "type": "integer", "example": 2025 }
+          },
+          {
+            "name": "mes",
+            "in": "query",
+            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
+            "schema": { "type": "string", "example": "2025-03" }
+          },
           {
             "name": "zona",
             "in": "query",
@@ -187,7 +211,7 @@
           {
             "name": "periodo",
             "in": "query",
-            "description": "Período de análise",
+            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
             "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
           },
           {
@@ -455,9 +479,21 @@
         "operationId": "topArtigos",
         "parameters": [
           {
+            "name": "ano",
+            "in": "query",
+            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
+            "schema": { "type": "integer", "example": 2025 }
+          },
+          {
+            "name": "mes",
+            "in": "query",
+            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
+            "schema": { "type": "string", "example": "2025-03" }
+          },
+          {
             "name": "periodo",
             "in": "query",
-            "description": "Período de análise",
+            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
             "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
           },
           {
@@ -515,9 +551,21 @@
         "operationId": "artigosMaiorMargem",
         "parameters": [
           {
+            "name": "ano",
+            "in": "query",
+            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
+            "schema": { "type": "integer", "example": 2025 }
+          },
+          {
+            "name": "mes",
+            "in": "query",
+            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
+            "schema": { "type": "string", "example": "2025-03" }
+          },
+          {
             "name": "periodo",
             "in": "query",
-            "description": "Período de análise",
+            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
             "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
           },
           {
@@ -745,9 +793,21 @@
             "schema": { "type": "string" }
           },
           {
+            "name": "ano",
+            "in": "query",
+            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
+            "schema": { "type": "integer", "example": 2025 }
+          },
+          {
+            "name": "mes",
+            "in": "query",
+            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
+            "schema": { "type": "string", "example": "2025-03" }
+          },
+          {
             "name": "periodo",
             "in": "query",
-            "description": "Período de análise",
+            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
             "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
           },
           {
@@ -868,9 +928,21 @@
         "operationId": "vendasPorLocalidade",
         "parameters": [
           {
+            "name": "ano",
+            "in": "query",
+            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
+            "schema": { "type": "integer", "example": 2025 }
+          },
+          {
+            "name": "mes",
+            "in": "query",
+            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
+            "schema": { "type": "string", "example": "2025-03" }
+          },
+          {
             "name": "periodo",
             "in": "query",
-            "description": "Período de análise",
+            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
             "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
           },
           {
@@ -1037,9 +1109,21 @@
         "operationId": "performanceVendedores",
         "parameters": [
           {
+            "name": "ano",
+            "in": "query",
+            "description": "Ano específico (ex: 2025). Se fornecido, ignora periodo.",
+            "schema": { "type": "integer", "example": 2025 }
+          },
+          {
+            "name": "mes",
+            "in": "query",
+            "description": "Mês específico no formato YYYY-MM (ex: 2025-03). Tem prioridade sobre ano e periodo.",
+            "schema": { "type": "string", "example": "2025-03" }
+          },
+          {
             "name": "periodo",
             "in": "query",
-            "description": "Período de análise",
+            "description": "Período relativo ao momento atual (ignorado se ano ou mes fornecido)",
             "schema": { "type": "string", "enum": ["mes", "trimestre", "ano"], "default": "ano" }
           },
           {

@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { query, sql } = require('../db');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { parsePagination } = require('../middleware/pagination');
+const { parsePagination, parseDateFilter } = require('../middleware/pagination');
 
 // ---------------------------------------------------------------------------
 // Constants: Document types for billing/sales
@@ -161,18 +161,9 @@ router.get('/resumo', asyncHandler(async (req, res) => {
 //    "Performance por localidade (Onde vendemos mais/menos)?"
 // ---------------------------------------------------------------------------
 router.get('/por-localidade', asyncHandler(async (req, res) => {
-  const periodo = req.query.periodo || 'ano';
   const limitVal = Math.min(500, Math.max(1, parseInt(req.query.limit) || 50));
-
-  let periodoWhere = '';
-  if (periodo === 'mes') {
-    periodoWhere = 'AND YEAR(cd.Data) = YEAR(GETDATE()) AND MONTH(cd.Data) = MONTH(GETDATE())';
-  } else if (periodo === 'trimestre') {
-    periodoWhere = 'AND YEAR(cd.Data) = YEAR(GETDATE()) AND DATEPART(QUARTER, cd.Data) = DATEPART(QUARTER, GETDATE())';
-  } else {
-    // ano (default)
-    periodoWhere = 'AND YEAR(cd.Data) = YEAR(GETDATE())';
-  }
+  const df = parseDateFilter(req, 'cd.Data');
+  const periodoWhere = `AND ${df.whereClause}`;
 
   const sqlText = `
     SELECT
@@ -219,7 +210,7 @@ router.get('/por-localidade', asyncHandler(async (req, res) => {
   const totais = result.recordsets[1][0] || {};
 
   res.json({
-    periodo,
+    periodo: df.label,
     localidades,
     totais: {
       totalVendas: totais.totalVendas || 0,
@@ -501,15 +492,9 @@ router.get('/recomendacoes/:clienteId', asyncHandler(async (req, res) => {
 //    Performance by salesperson
 // ---------------------------------------------------------------------------
 router.get('/vendedores', asyncHandler(async (req, res) => {
-  const periodo = req.query.periodo || 'ano';
   const limitVal = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-
-  let periodoWhere = '';
-  if (periodo === 'mes') {
-    periodoWhere = 'AND YEAR(cd.Data) = YEAR(GETDATE()) AND MONTH(cd.Data) = MONTH(GETDATE())';
-  } else {
-    periodoWhere = 'AND YEAR(cd.Data) = YEAR(GETDATE())';
-  }
+  const df = parseDateFilter(req, 'cd.Data');
+  const periodoWhere = `AND ${df.whereClause}`;
 
   const sqlText = `
     SELECT
@@ -561,7 +546,7 @@ router.get('/vendedores', asyncHandler(async (req, res) => {
     };
   });
 
-  res.json({ periodo, vendedores });
+  res.json({ periodo: df.label, vendedores });
 }));
 
 // ---------------------------------------------------------------------------

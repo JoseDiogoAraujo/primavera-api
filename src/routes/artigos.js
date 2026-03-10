@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { query, sql } = require('../db');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { parsePagination } = require('../middleware/pagination');
+const { parsePagination, parseDateFilter } = require('../middleware/pagination');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -138,8 +138,8 @@ router.get('/', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/top', asyncHandler(async (req, res) => {
-  const periodo = req.query.periodo || 'ano';
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+  const df = parseDateFilter(req, 'cd.Data');
   const params = {};
   let familiaFilter = '';
 
@@ -147,9 +147,6 @@ router.get('/top', asyncHandler(async (req, res) => {
     familiaFilter = 'AND a.Familia = @familia';
     params.familia = req.query.familia;
   }
-
-  const pFilter = periodFilter('cd.Data');
-  // We inline the period logic directly so we can also return date boundaries.
 
   const result = await query(`
     SELECT TOP (@topN)
@@ -173,7 +170,7 @@ router.get('/top', asyncHandler(async (req, res) => {
     LEFT  JOIN Familias f         ON f.Familia = a.Familia
     WHERE cd.TipoDoc IN (${BILLING_IN})
       AND ISNULL(cds.Anulado, 0) = 0
-      AND ${periodFilter(periodo, 'cd.Data')}
+      AND ${df.whereClause}
       ${familiaFilter}
     GROUP BY ld.Artigo
     HAVING ${VAL_CASE} > 0
@@ -181,9 +178,7 @@ router.get('/top', asyncHandler(async (req, res) => {
   `, { ...params, topN: limit });
 
   res.json({
-    periodo: periodLabel(periodo),
-    dataInicio: `(${periodStartExpr(periodo)})`,
-    dataFim: 'GETDATE()',
+    periodo: df.label,
     top: result.recordset
   });
 }));
@@ -194,8 +189,8 @@ router.get('/top', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/maior-margem', asyncHandler(async (req, res) => {
-  const periodo = req.query.periodo || 'ano';
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+  const df = parseDateFilter(req, 'cd.Data');
   const params = {};
   let familiaFilter = '';
 
@@ -209,7 +204,6 @@ router.get('/maior-margem', asyncHandler(async (req, res) => {
       ld.Artigo,
       MAX(a.Descricao)           AS descricao,
       MAX(a.Familia)             AS familia,
-      -- Weighted average margin: SUM(margin * value) / SUM(value)
       SUM(
         CASE WHEN cd.TipoDoc IN (${CREDIT_IN})
           THEN -ld.TotalIliquido * ld.PercentagemMargem
@@ -224,7 +218,7 @@ router.get('/maior-margem', asyncHandler(async (req, res) => {
     INNER JOIN Artigo a           ON a.Artigo = ld.Artigo
     WHERE cd.TipoDoc IN (${BILLING_IN})
       AND ISNULL(cds.Anulado, 0) = 0
-      AND ${periodFilter(periodo, 'cd.Data')}
+      AND ${df.whereClause}
       ${familiaFilter}
     GROUP BY ld.Artigo
     HAVING ${VAL_CASE} > 0
@@ -232,7 +226,7 @@ router.get('/maior-margem', asyncHandler(async (req, res) => {
   `, { ...params, topN: limit });
 
   res.json({
-    periodo: periodLabel(periodo),
+    periodo: df.label,
     top: result.recordset
   });
 }));
@@ -487,10 +481,9 @@ router.get('/:id/cliente/:clienteId', asyncHandler(async (req, res) => {
 
 router.get('/:id/top-clientes', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const periodo = req.query.periodo || 'ano';
+  const df = parseDateFilter(req, 'cd.Data');
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
 
-  // Article exists?
   const artResult = await query(`
     SELECT Artigo, Descricao FROM Artigo WHERE Artigo = @id
   `, { id });
@@ -516,7 +509,7 @@ router.get('/:id/top-clientes', asyncHandler(async (req, res) => {
     WHERE ld.Artigo = @id
       AND cd.TipoDoc IN (${BILLING_IN})
       AND ISNULL(cds.Anulado, 0) = 0
-      AND ${periodFilter(periodo, 'cd.Data')}
+      AND ${df.whereClause}
     GROUP BY cd.Entidade
     HAVING ${VAL_CASE} > 0
     ORDER BY valorTotal DESC
@@ -525,7 +518,7 @@ router.get('/:id/top-clientes', asyncHandler(async (req, res) => {
   res.json({
     artigo: artigo.Artigo,
     descricao: artigo.Descricao,
-    periodo: periodLabel(periodo),
+    periodo: df.label,
     topClientes: result.recordset
   });
 }));

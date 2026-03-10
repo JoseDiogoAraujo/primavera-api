@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { query, sql } = require('../db');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { parsePagination, parseDateRange } = require('../middleware/pagination');
+const { parsePagination, parseDateRange, parseDateFilter } = require('../middleware/pagination');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -100,28 +100,50 @@ router.get('/', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/segmentacao', asyncHandler(async (req, res) => {
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-  const periodo = req.query.periodo || 'ano'; // mes | trimestre | ano
+  const mesParam = req.query.mes;
+  const anoParam = req.query.ano;
+  const periodo = req.query.periodo || 'ano';
 
-  // Build date boundaries based on periodo
-  let dateExpr;
-  switch (periodo) {
-    case 'mes':
-      dateExpr = `DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)`;
-      break;
-    case 'trimestre':
-      dateExpr = `DATEADD(QUARTER, DATEDIFF(QUARTER, 0, GETDATE()), 0)`;
-      break;
-    default: // ano
-      dateExpr = `DATEFROMPARTS(YEAR(GETDATE()), 1, 1)`;
+  // Build date boundaries: mes > ano > periodo
+  let dateExpr, prevDateExpr;
+  let label;
+
+  if (mesParam && /^\d{4}-\d{2}$/.test(mesParam)) {
+    const [y, m] = mesParam.split('-').map(Number);
+    dateExpr = `DATEFROMPARTS(${y}, ${m}, 1)`;
+    prevDateExpr = `DATEADD(MONTH, -1, ${dateExpr})`;
+    label = mesParam;
+  } else if (anoParam) {
+    const y = parseInt(anoParam);
+    dateExpr = `DATEFROMPARTS(${y}, 1, 1)`;
+    prevDateExpr = `DATEFROMPARTS(${y - 1}, 1, 1)`;
+    label = String(y);
+  } else {
+    switch (periodo) {
+      case 'mes':
+        dateExpr = `DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)`;
+        prevDateExpr = `DATEADD(MONTH, -1, ${dateExpr})`;
+        label = 'mes-atual';
+        break;
+      case 'trimestre':
+        dateExpr = `DATEADD(QUARTER, DATEDIFF(QUARTER, 0, GETDATE()), 0)`;
+        prevDateExpr = `DATEADD(QUARTER, -1, ${dateExpr})`;
+        label = 'trimestre-atual';
+        break;
+      default:
+        dateExpr = `DATEFROMPARTS(YEAR(GETDATE()), 1, 1)`;
+        prevDateExpr = `DATEADD(YEAR, -1, ${dateExpr})`;
+        label = 'ano-atual';
+    }
   }
 
-  const prevDateExpr = periodo === 'mes'
-    ? `DATEADD(MONTH, -1, ${dateExpr})`
-    : periodo === 'trimestre'
-      ? `DATEADD(QUARTER, -1, ${dateExpr})`
-      : `DATEADD(YEAR, -1, ${dateExpr})`;
+  // End date: for ano/mes specific, cap the range; for relative, use now
+  const endDateExpr = (mesParam && /^\d{4}-\d{2}$/.test(mesParam))
+    ? `DATEADD(MONTH, 1, ${dateExpr})`
+    : anoParam
+      ? `DATEFROMPARTS(${parseInt(anoParam) + 1}, 1, 1)`
+      : 'GETDATE()';
 
-  // Optional filters
   let filterWhere = '';
   const params = { limit };
 
@@ -134,7 +156,7 @@ router.get('/segmentacao', asyncHandler(async (req, res) => {
     params.localidade = `%${req.query.localidade}%`;
   }
 
-  // 1. Top clientes no periodo atual
+  // 1. Top clientes no periodo
   const topResult = await query(`
     SELECT TOP (@limit)
       cd.Entidade AS cliente,
@@ -150,6 +172,7 @@ router.get('/segmentacao', asyncHandler(async (req, res) => {
     WHERE ${BILLING_BASE_WHERE}
       AND cd.Entidade = cl.Cliente
       AND cd.Data >= ${dateExpr}
+      AND cd.Data < ${endDateExpr}
       ${filterWhere}
     GROUP BY cd.Entidade, cl.Nome, cl.Zona, z.Descricao, cl.TipoCli
     ORDER BY total DESC
@@ -165,6 +188,7 @@ router.get('/segmentacao', asyncHandler(async (req, res) => {
       INNER JOIN Clientes cl ON cd.Entidade = cl.Cliente
       WHERE ${BILLING_BASE_WHERE}
         AND cd.Data >= ${dateExpr}
+        AND cd.Data < ${endDateExpr}
         ${filterWhere}
       GROUP BY cd.Entidade
     ),
@@ -197,7 +221,6 @@ router.get('/segmentacao', asyncHandler(async (req, res) => {
     ORDER BY variacao DESC
   `, params);
 
-  // Separate growth and decline
   const crescimento = [];
   const declinio = [];
   for (const row of growthResult.recordset) {
@@ -207,7 +230,6 @@ router.get('/segmentacao', asyncHandler(async (req, res) => {
       declinio.push(row);
     }
   }
-  // Sort decline by worst first
   declinio.sort((a, b) => a.variacao - b.variacao);
 
   // 3. Clientes inativos (sem compra ha mais de 6 meses)
@@ -236,7 +258,7 @@ router.get('/segmentacao', asyncHandler(async (req, res) => {
   `, params);
 
   res.json({
-    periodo,
+    periodo: label,
     topClientes: topResult.recordset,
     crescimento,
     declinio,
@@ -249,19 +271,7 @@ router.get('/segmentacao', asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/top', asyncHandler(async (req, res) => {
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-  const periodo = req.query.periodo || 'ano';
-
-  let dateExpr;
-  switch (periodo) {
-    case 'mes':
-      dateExpr = `DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)`;
-      break;
-    case 'trimestre':
-      dateExpr = `DATEADD(QUARTER, DATEDIFF(QUARTER, 0, GETDATE()), 0)`;
-      break;
-    default:
-      dateExpr = `DATEFROMPARTS(YEAR(GETDATE()), 1, 1)`;
-  }
+  const df = parseDateFilter(req, 'cd.Data');
 
   let filterWhere = '';
   const params = { limit };
@@ -292,14 +302,14 @@ router.get('/top', asyncHandler(async (req, res) => {
     INNER JOIN Clientes cl ON cd.Entidade = cl.Cliente
     LEFT  JOIN Zonas z ON cl.Zona = z.Zona
     WHERE ${BILLING_BASE_WHERE}
-      AND cd.Data >= ${dateExpr}
+      AND ${df.whereClause}
       ${filterWhere}
     GROUP BY cd.Entidade, cl.Nome, cl.Zona, z.Descricao, cl.Fac_Local, cl.TipoCli
     ORDER BY totalFaturado DESC
   `, params);
 
   res.json({
-    periodo,
+    periodo: df.label,
     total: result.recordset.length,
     data: result.recordset
   });
